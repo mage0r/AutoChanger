@@ -1,11 +1,11 @@
 EESchema-LIBRARY Version 2.4
 #encoding utf-8
 #
-# AutoChanger-rescue:CONN_01X01
+# AutoChanger-rescue_CONN_01X01
 #
-DEF AutoChanger-rescue:CONN_01X01 J 0 40 Y N 1 F N
+DEF AutoChanger-rescue_CONN_01X01 J 0 40 Y N 1 F N
 F0 "J" 0 100 50 H V C CNN
-F1 "AutoChanger-rescue:CONN_01X01" 100 0 50 V V C CNN
+F1 "AutoChanger-rescue_CONN_01X01" 100 0 50 V V C CNN
 F2 "" 0 0 50 H I C CNN
 F3 "" 0 0 50 H I C CNN
 $FPLIST
@@ -21,11 +21,11 @@ X P1 1 -200 0 150 R 50 50 1 1 P
 ENDDRAW
 ENDDEF
 #
-# AutoChanger-rescue:CONN_01X03
+# AutoChanger-rescue_CONN_01X03
 #
-DEF AutoChanger-rescue:CONN_01X03 J 0 40 Y N 1 F N
+DEF AutoChanger-rescue_CONN_01X03 J 0 40 Y N 1 F N
 F0 "J" 0 200 50 H V C CNN
-F1 "AutoChanger-rescue:CONN_01X03" 100 0 50 V V C CNN
+F1 "AutoChanger-rescue_CONN_01X03" 100 0 50 V V C CNN
 F2 "" 0 0 50 H I C CNN
 F3 "" 0 0 50 H I C CNN
 $FPLIST
@@ -45,11 +45,11 @@ X P3 3 -200 -100 150 R 50 50 1 1 P
 ENDDRAW
 ENDDEF
 #
-# AutoChanger-rescue:CONN_01X04
+# AutoChanger-rescue_CONN_01X04
 #
-DEF AutoChanger-rescue:CONN_01X04 J 0 40 Y N 1 F N
+DEF AutoChanger-rescue_CONN_01X04 J 0 40 Y N 1 F N
 F0 "J" 0 250 50 H V C CNN
-F1 "AutoChanger-rescue:CONN_01X04" 100 0 50 V V C CNN
+F1 "AutoChanger-rescue_CONN_01X04" 100 0 50 V V C CNN
 F2 "" 0 0 50 H I C CNN
 F3 "" 0 0 50 H I C CNN
 $FPLIST
@@ -71,11 +71,11 @@ X P4 4 -200 -150 150 R 50 50 1 1 P
 ENDDRAW
 ENDDEF
 #
-# AutoChanger-rescue:SPEAKER
+# AutoChanger-rescue_SPEAKER
 #
-DEF AutoChanger-rescue:SPEAKER SP 0 0 N Y 1 F N
+DEF AutoChanger-rescue_SPEAKER SP 0 0 N Y 1 F N
 F0 "SP" -100 250 50 H V C CNN
-F1 "AutoChanger-rescue:SPEAKER" -100 -250 50 H V C CNN
+F1 "AutoChanger-rescue_SPEAKER" -100 -250 50 H V C CNN
 F2 "" 0 0 50 H V C CNN
 F3 "" 0 0 50 H V C CNN
 DRAW
@@ -86,11 +86,11 @@ X 2 2 -300 -100 200 R 40 40 1 1 I
 ENDDRAW
 ENDDEF
 #
-# AutoChanger-rescue:SW_PUSH
+# AutoChanger-rescue_SW_PUSH
 #
-DEF AutoChanger-rescue:SW_PUSH SW 0 40 N N 1 F N
+DEF AutoChanger-rescue_SW_PUSH SW 0 40 N N 1 F N
 F0 "SW" 150 110 50 H V C CNN
-F1 "AutoChanger-rescue:SW_PUSH" 0 -80 50 H V C CNN
+F1 "AutoChanger-rescue_SW_PUSH" 0 -80 50 H V C CNN
 F2 "" 0 0 50 H V C CNN
 F3 "" 0 0 50 H V C CNN
 DRAW
@@ -101,11 +101,11 @@ X 2 2 300 0 200 L 50 50 0 1 P I
 ENDDRAW
 ENDDEF
 #
-# Device:C
+# Device_C
 #
-DEF Device:C C 0 10 N Y 1 F N
+DEF Device_C C 0 10 N Y 1 F N
 F0 "C" 25 100 50 H V L CNN
-F1 "Device:C" 25 -100 50 H V L CNN
+F1 "Device_C" 25 -100 50 H V L CNN
 F2 "" 38 -150 50 H I C CNN
 F3 "" 0 0 50 H I C CNN
 $FPLIST
@@ -119,11 +119,11 @@ X ~ 2 0 -150 110 U 50 50 1 1 P
 ENDDRAW
 ENDDEF
 #
-# Device:R
+# Device_R
 #
-DEF Device:R R 0 0 N Y 1 F N
+DEF Device_R R 0 0 N Y 1 F N
 F0 "R" 80 0 50 V V C CNN
-F1 "Device:R" 0 0 50 V V C CNN
+F1 "Device_R" 0 0 50 V V C CNN
 F2 "" -70 0 50 V I C CNN
 F3 "" 0 0 50 H I C CNN
 $FPLIST
@@ -136,11 +136,49 @@ X ~ 2 0 -150 50 U 50 50 1 1 P
 ENDDRAW
 ENDDEF
 #
-# arduino:arduino_nano
+# Device_Rotary_Encoder_Switch
 #
-DEF arduino:arduino_nano U 0 40 Y Y 1 F N
+DEF Device_Rotary_Encoder_Switch SW 0 10 Y N 1 F N
+F0 "SW" 0 260 50 H V C CNN
+F1 "Device_Rotary_Encoder_Switch" 0 -260 50 H V C CNN
+F2 "" -150 160 50 H I C CNN
+F3 "" 0 260 50 H I C CNN
+$FPLIST
+ RotaryEncoder*Switch*
+$ENDFPLIST
+DRAW
+A -15 -2 108 -899 899 0 1 10 N -15 -110 -15 105
+C -150 0 10 0 1 0 F
+C -15 0 75 0 1 10 N
+C 170 -40 5 0 1 10 N
+C 170 40 5 0 1 10 N
+S -200 200 200 -200 0 1 10 f
+P 2 0 1 10 -25 -70 -25 70 N
+P 2 0 1 10 -15 -70 -15 70 N
+P 2 0 1 10 -5 70 -5 -70 N
+P 2 0 1 10 150 0 135 0 N
+P 2 0 1 10 150 40 150 -40 N
+P 3 0 1 0 -200 -100 -150 -100 -150 -80 N
+P 3 0 1 0 -200 100 -150 100 -150 80 N
+P 3 0 1 10 10 -120 -20 -110 5 -95 N
+P 3 0 1 10 10 115 -20 105 5 90 N
+P 3 0 1 10 200 -100 170 -100 170 -40 N
+P 3 0 1 10 200 100 170 100 170 40 N
+P 4 0 1 0 -200 0 -150 0 -150 -40 -130 -80 N
+P 4 0 1 0 -170 0 -150 0 -150 40 -130 80 N
+X A A -300 100 100 R 50 50 1 1 P
+X B B -300 -100 100 R 50 50 1 1 P
+X C C -300 0 100 R 50 50 1 1 P
+X S1 S1 300 100 100 L 50 50 1 1 P
+X S2 S2 300 -100 100 L 50 50 1 1 P
+ENDDRAW
+ENDDEF
+#
+# arduino_arduino_nano
+#
+DEF arduino_arduino_nano U 0 40 Y Y 1 F N
 F0 "U" 500 -950 70 H V C CNN
-F1 "arduino:arduino_nano" 750 -1050 70 H V C CNN
+F1 "arduino_arduino_nano" 750 -1050 70 H V C CNN
 F2 "DIL20" 0 -50 60 H V C CNN
 F3 "" 0 0 60 H V C CNN
 DRAW
@@ -178,11 +216,11 @@ X A5(SCL) 9 -700 -300 300 R 60 60 1 1 B
 ENDDRAW
 ENDDEF
 #
-# itr9606-f:ITR9606-F
+# itr9606-f_ITR9606-F
 #
-DEF itr9606-f:ITR9606-F U 0 40 Y Y 1 F N
+DEF itr9606-f_ITR9606-F U 0 40 Y Y 1 F N
 F0 "U" -200 200 50 H V L CNN
-F1 "itr9606-f:ITR9606-F" 0 200 50 H V L CNN
+F1 "itr9606-f_ITR9606-F" 0 200 50 H V L CNN
 F2 "" -200 -200 50 H V L CIN
 F3 "https://media.digikey.com/pdf/Data%20Sheets/Everlight%20PDFs/ITR9606-F.pdf" -250 300 50 H I L CNN
 DRAW
@@ -207,11 +245,11 @@ X ~ 4 300 100 100 L 50 50 1 1 P
 ENDDRAW
 ENDDEF
 #
-# power:+5V
+# power_+5V
 #
-DEF power:+5V #PWR 0 0 Y Y 1 F P
+DEF power_+5V #PWR 0 0 Y Y 1 F P
 F0 "#PWR" 0 -150 50 H I C CNN
-F1 "power:+5V" 0 140 50 H V C CNN
+F1 "power_+5V" 0 140 50 H V C CNN
 F2 "" 0 0 50 H I C CNN
 F3 "" 0 0 50 H I C CNN
 DRAW
@@ -222,32 +260,16 @@ X +5V 1 0 0 0 U 50 50 1 1 W N
 ENDDRAW
 ENDDEF
 #
-# power:GND
+# power_GND
 #
-DEF power:GND #PWR 0 0 Y Y 1 F P
+DEF power_GND #PWR 0 0 Y Y 1 F P
 F0 "#PWR" 0 -250 50 H I C CNN
-F1 "power:GND" 0 -150 50 H V C CNN
+F1 "power_GND" 0 -150 50 H V C CNN
 F2 "" 0 0 50 H I C CNN
 F3 "" 0 0 50 H I C CNN
 DRAW
 P 6 0 1 0 0 0 0 -50 50 -50 0 -100 -50 -50 0 -50 N
 X GND 1 0 0 0 D 50 50 1 1 W N
-ENDDRAW
-ENDDEF
-#
-# ws2812b:WS2812b
-#
-DEF ws2812b:WS2812b U 0 40 Y Y 1 F N
-F0 "U" -40 90 50 H V L CNN
-F1 "ws2812b:WS2812b" -180 0 50 H V L CNN
-F2 "" -200 -200 50 H V L CIN
-F3 "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf" -350 280 50 H I L CNN
-DRAW
-S -230 140 230 -140 0 1 10 f
-X VDD 1 -330 100 100 R 39 39 1 1 P
-X DOUT 2 -330 -100 100 R 39 39 1 1 P
-X VSS 3 330 -100 100 L 39 39 1 1 P
-X DIN 4 330 100 100 L 39 39 1 1 P
 ENDDRAW
 ENDDEF
 #
