@@ -12,10 +12,10 @@
 
 // The colour changer only uses 4 servos.
 byte servos[4][3] = {
-  {A0,0,100},
-  {A1,0,100},
-  {A2,0,100},
-  {A3,0,100},
+  {A0,0,130},
+  {A1,0,90},
+  {A2,0,90},
+  {A3,0,90},
 };
 
 unsigned int servoCount[4] = {0,0,0,0};
