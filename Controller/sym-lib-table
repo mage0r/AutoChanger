@@ -29,4 +29,5 @@
   (lib (name ch340g)(type Legacy)(uri ${KIPRJMOD}/libs/ch340g.lib)(options "")(descr ""))
   (lib (name crystal_4pin_smd)(type Legacy)(uri ${KIPRJMOD}/libs/crystal_4pin_smd.lib)(options "")(descr ""))
   (lib (name arduino)(type Legacy)(uri ${KIPRJMOD}/subs/kicad-libraries/components/arduino.lib)(options "")(descr ""))
+  (lib (name tinypico)(type Legacy)(uri ${KIPRJMOD}/libs/tinypico.lib)(options "")(descr ""))
 )
