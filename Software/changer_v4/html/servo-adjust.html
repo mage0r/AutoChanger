@@ -1,0 +1,147 @@
+<!DOCTYPE HTML><html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AutoChanger - Version V.4.0</title>
+  <style>
+      body {
+        background-color: #f7f7f7;
+      }
+      #submit {
+        width:120px;
+      }
+      #spacer_50 {
+        height: 50px;
+      }
+      #spacer_20 {
+        height: 20px;
+      }
+      table {
+        background-color: #dddddd;
+        border-collapse: collapse;
+        width:650px;
+      }
+      td, th {
+        border: 1px solid #dddddd;
+        text-align: center;
+        padding: 8px;
+      }
+      #first_td_th {
+        width:350px;
+      }
+      #center_td {
+        text-align: center;
+      }
+      tr:nth-child(even) {
+        background-color: #ffffff;
+      }
+      fieldset {
+        width:700px;
+        background-color: #f7f7f7;
+      }
+      #format_notice {
+        color: #ff0000;
+      }
+  </style>
+</head>
+<body>
+  <h2>AutoChanger - Version V.4.0</h2>
+  <fieldset>
+    <legend>Servo Config</legend>
+      <table>
+	<tr>
+	  <th></th>
+	  <th>DOWN</th>
+	  <th>UP</th>
+	  <th>EJECT</th>
+	</tr>
+	<tr>
+	  <td rowspan=2>Arm 1</td>
+	  <td><input type="button" onclick="updateSliderPWM(this)" id="SERVOS_0_0Value" value="%SERVOS_0_0%" /></td>
+	  <td><input type="button" onclick="updateSliderPWM(this)" id="SERVOS_0_1Value" value="%SERVOS_0_1%" /></td>
+	  <td><input type="button" onclick="updateSliderPWM(this)" id="SERVOS_0_2Value" value="%SERVOS_0_2%" /></td>
+	</tr>
+	<tr>
+	  <td><input type="button" onclick="minusSlider('SERVOS_0_0')" value="-" /><input type="range" oninput="updateSliderDisplay(this)" onchange="updateSliderPWM(this)" id="SERVOS_0_0" min="1" max="700" value="%SERVOS_0_0%" step="1" class="slider" /><input type="button" onclick="plusSlider('SERVOS_0_0')" value="+" /></td>
+	  <td><input type="button" onclick="minusSlider('SERVOS_0_1')" value="-" /><input type="range" oninput="updateSliderDisplay(this)" onchange="updateSliderPWM(this)" id="SERVOS_0_1" min="1" max="700" value="%SERVOS_0_1%" step="1" class="slider" /><input type="button" onclick="plusSlider('SERVOS_0_1')" value="+" /></td>
+	  <td><input type="button" onclick="minusSlider('SERVOS_0_2')" value="-" /><input type="range" oninput="updateSliderDisplay(this)" onchange="updateSliderPWM(this)" id="SERVOS_0_2" min="1" max="700" value="%SERVOS_0_2%" step="1" class="slider" /><input type="button" onclick="plusSlider('SERVOS_0_2')" value="+" /></td>
+	</tr>
+	<tr>
+	  <td rowspan=2>Arm 2</td>
+	  <td><input type="button" onclick="updateSliderPWM(this)" id="SERVOS_1_0Value" value="%SERVOS_1_0%" /></td>
+	  <td><input type="button" onclick="updateSliderPWM(this)" id="SERVOS_1_1Value" value="%SERVOS_1_1%" /></td>
+	  <td><input type="button" onclick="updateSliderPWM(this)" id="SERVOS_1_2Value" value="%SERVOS_1_2%" /></td>
+	</tr>
+	<tr>
+	  <td><input type="button" onclick="minusSlider('SERVOS_1_0')" value="-" /><input type="range" oninput="updateSliderDisplay(this)" onchange="updateSliderPWM(this)" id="SERVOS_1_0" min="1" max="700" value="%SERVOS_1_0%" step="1" class="slider" /><input type="button" onclick="plusSlider('SERVOS_1_0')" value="+" /></td>
+	  <td><input type="button" onclick="minusSlider('SERVOS_1_1')" value="-" /><input type="range" oninput="updateSliderDisplay(this)" onchange="updateSliderPWM(this)" id="SERVOS_1_1" min="1" max="700" value="%SERVOS_1_1%" step="1" class="slider" /><input type="button" onclick="plusSlider('SERVOS_1_1')" value="+" /></td>
+	  <td><input type="button" onclick="minusSlider('SERVOS_1_2')" value="-" /><input type="range" oninput="updateSliderDisplay(this)" onchange="updateSliderPWM(this)" id="SERVOS_1_2" min="1" max="700" value="%SERVOS_1_2%" step="1" class="slider" /><input type="button" onclick="plusSlider('SERVOS_1_2')" value="+" /></td>
+	</tr>
+	<tr>
+	  <td rowspan=2>Arm 3</td>
+	  <td><input type="button" onclick="updateSliderPWM(this)" id="SERVOS_2_0Value" value="%SERVOS_2_0%" /></td>
+	  <td><input type="button" onclick="updateSliderPWM(this)" id="SERVOS_2_1Value" value="%SERVOS_2_1%" /></td>
+	  <td><input type="button" onclick="updateSliderPWM(this)" id="SERVOS_2_2Value" value="%SERVOS_2_2%" /></td>
+	</tr>
+	<tr>
+	  <td><input type="button" onclick="minusSlider('SERVOS_2_0')" value="-" /><input type="range" oninput="updateSliderDisplay(this)" onchange="updateSliderPWM(this)" id="SERVOS_2_0" min="1" max="700" value="%SERVOS_2_0%" step="1" class="slider" /><input type="button" onclick="plusSlider('SERVOS_2_0')" value="+" /></td>
+	  <td><input type="button" onclick="minusSlider('SERVOS_2_1')" value="-" /><input type="range" oninput="updateSliderDisplay(this)" onchange="updateSliderPWM(this)" id="SERVOS_2_1" min="1" max="700" value="%SERVOS_2_1%" step="1" class="slider" /><input type="button" onclick="plusSlider('SERVOS_2_1')" value="+" /></td>
+	  <td><input type="button" onclick="minusSlider('SERVOS_2_2')" value="-" /><input type="range" oninput="updateSliderDisplay(this)" onchange="updateSliderPWM(this)" id="SERVOS_2_2" min="1" max="700" value="%SERVOS_2_2%" step="1" class="slider" /><input type="button" onclick="plusSlider('SERVOS_2_2')" value="+" /></td>
+	</tr>
+	<tr>
+	  <td rowspan=2>Arm 4</td>
+	  <td><input type="button" onclick="updateSliderPWM(this)" id="SERVOS_3_0Value" value="%SERVOS_3_0%" /></td>
+	  <td><input type="button" onclick="updateSliderPWM(this)" id="SERVOS_3_1Value" value="%SERVOS_3_1%" /></td>
+	  <td><input type="button" onclick="updateSliderPWM(this)" id="SERVOS_3_2Value" value="%SERVOS_3_2%" /></td>
+	</tr>
+	<tr>
+	  <td><input type="button" onclick="minusSlider('SERVOS_3_0')" value="-" /><input type="range" oninput="updateSliderDisplay(this)" onchange="updateSliderPWM(this)" id="SERVOS_3_0" min="1" max="700" value="%SERVOS_3_0%" step="1" class="slider" /><input type="button" onclick="plusSlider('SERVOS_3_0')" value="+" /></td>
+	  <td><input type="button" onclick="minusSlider('SERVOS_3_1')" value="-" /><input type="range" oninput="updateSliderDisplay(this)" onchange="updateSliderPWM(this)" id="SERVOS_3_1" min="1" max="700" value="%SERVOS_3_1%" step="1" class="slider" /><input type="button" onclick="plusSlider('SERVOS_3_1')" value="+" /></td>
+	  <td><input type="button" onclick="minusSlider('SERVOS_3_2')" value="-" /><input type="range" oninput="updateSliderDisplay(this)" onchange="updateSliderPWM(this)" id="SERVOS_3_2" min="1" max="700" value="%SERVOS_3_2%" step="1" class="slider" /><input type="button" onclick="plusSlider('SERVOS_3_2')" value="+" /></td>
+	</tr>
+      </table>
+  </fieldset>
+<script>
+String.prototype.endsWith = function(suffix) {
+    return this.indexOf(suffix, this.length - suffix.length) !== -1;
+};
+
+function updateSliderPWM(element) {
+  var sliderValue = element.value;
+  var id = element.id;
+
+  if(element.id.endsWith("Value"))
+    id = element.id.substring(0,element.id.length-5);
+  else
+    document.getElementById(element.id+"Value").value = sliderValue;
+
+  var xhr = new XMLHttpRequest();
+  xhr.open("GET", "/updateServo?"+id+"="+sliderValue, true);
+  xhr.send();
+}
+function updateSliderDisplay(element) {
+  var sliderValue = element.value;
+  document.getElementById(element.id+"Value").value = sliderValue;
+}
+function minusSlider(id) {
+	var sliderValue = parseInt(document.getElementById(id).value, 10);
+	sliderValue = sliderValue-1;
+	document.getElementById(id).value = sliderValue;
+	document.getElementById(id+"Value").value = sliderValue;
+	
+	var xhr = new XMLHttpRequest();
+	xhr.open("GET", "/updateServo?"+id+"="+sliderValue, true);
+	xhr.send();
+}
+function plusSlider(id) {
+	var sliderValue = parseInt(document.getElementById(id).value, 10);
+	sliderValue = sliderValue+1;
+	document.getElementById(id).value = sliderValue;
+	document.getElementById(id+"Value").value = sliderValue;
+	
+	var xhr = new XMLHttpRequest();
+	xhr.open("GET", "/updateServo?"+id+"="+sliderValue, true);
+	xhr.send();
+}
+</script>
+</body>
+</html>

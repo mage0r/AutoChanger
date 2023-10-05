@@ -6,16 +6,18 @@
  ****************************************************/
 
 #include <Wire.h>
-#include <Servo.h>
+//#include <Servo.h>
 #include <EEPROM.h>
-#include <Bounce2.h>
+//#include <Bounce2.h>
+#include <Adafruit_PWMServoDriver.h>
 
 // The colour changer only uses 4 servos.
-byte servos[4][3] = {
-  {A0,0,130},
-  {A1,0,90},
-  {A2,0,90},
-  {A3,0,90},
+// closed, open, eject
+int servos[4][3] = {
+  {100,420,600},
+  {100,420,600},
+  {100,420,600},
+  {100,420,600},
 };
 
 unsigned int servoCount[4] = {0,0,0,0};
@@ -28,13 +30,9 @@ byte pattern[4][21] = {
   {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
 };
 
-const int buttonPins[4] = {10,9,8,7};
-Bounce debouncer[4] = Bounce();
-unsigned long buttonPressTimeStamp;
-unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
-unsigned long debounceDelay = 1;    // the debounce time; increase if the output flickers
+//Servo myservo[4];
 
-Servo myservo[4];
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
 // our servo # counter
 uint8_t servonum = 0;
@@ -47,37 +45,48 @@ const int EEPROMPattern = 100;
 void setup() {
   Serial.begin(115200);
 
+  pwm.begin();
+
+  pwm.setPWMFreq(60);  // Analog servos run at ~60 Hz updates
+  
+
   for (int x = 0; x < 4; x++) {
-      myservo[x].attach(servos[x][0]);
-      myservo[x].write(servos[x][1]);
+      //myservo[x].attach(servos[x][0]);
+      //myservo[x].write(servos[x][1]);
       Serial.print("Servo ");
       Serial.print(x);
       Serial.print(": Position ");
-      Serial.println(servos[x][1]);
+      pwm.setPWM(x, 0, servos[x][0]);
+      Serial.println(servos[x][0]);
       delay(600);
-      myservo[x].detach();
+      pwm.setPWM(x, 0, 0);
+      //myservo[x].detach();
   }
 
-  for (int x = 0; x < 4; x++) {
-    pinMode(buttonPins[x], INPUT);
-    debouncer[x].attach(buttonPins[x]);
-    debouncer[x].interval(5);
-  }
+  EEPROM.begin(512);
 
   writeEEPROM();
-
-  // this resets the servo counts.
-  // Don't use it.
-  //EEPROM.put(EEPROMServoCount,servoCount);
   
 }
 
 void loop() {
+  
   for (int x = 0; x < 4; x++) {
-    debouncer[x].update();
+      //myservo[x].attach(servos[x][0]);
+      //myservo[x].write(servos[x][1]);
+      Serial.print("Servo ");
+      Serial.print(x);
+      Serial.print(": Position ");
+      pwm.setPWM(x, 0, servos[x][1]);
+      Serial.println(servos[x][1]);
+      delay(600);
+      pwm.setPWM(x, 0, servos[x][0]);
+      Serial.println(servos[x][0]);
+      delay(600);
+      pwm.setPWM(x, 0, 0);
+      //myservo[x].detach();
   }
-
-  checkButtons();
+  
 }
 
 void writeEEPROM() {
@@ -103,27 +112,13 @@ void writeEEPROM() {
     }
     Serial.println();
   }
+  
   EEPROM.put(EEPROMPattern,pattern);
-  
-}
 
-void checkButtons() {
+  // this resets the servo counts.
+  // Don't use it.
+  EEPROM.put(EEPROMServoCount,servoCount);
+
+  EEPROM.commit();
   
-  for (int x = 0; x < 4; x++) {
-      //Serial.println(debouncer[x].read());
-      
-      if(!debouncer[x].read()){
-        myservo[x].write(servos[x][2]);
-        myservo[x].attach(servos[x][0]);
-        delay(600);
-        myservo[x].detach();
-      }
-      else if (myservo[x].read() != servos[x][1]){
-        myservo[x].write(servos[x][1]);
-        myservo[x].attach(servos[x][0]);
-        delay(600);
-        myservo[x].detach();
-      }
-      
-  }
 }
