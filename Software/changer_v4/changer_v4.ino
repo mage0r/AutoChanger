@@ -71,7 +71,7 @@ const int armPin = 23;
 unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
 unsigned long debounceDelay = 200;    // the debounce time; increase if the output flickers
 byte armCounter = 0;  // We ignore every second pass.
-boolean armTrigger = false;
+volatile boolean armTrigger = false;
 
 // input buttons
 // These are hardcoded

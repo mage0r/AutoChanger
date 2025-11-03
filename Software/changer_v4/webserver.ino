@@ -1,5 +1,4 @@
-String processor(const String& var)
-{
+String processor(const String& var) {
   if(var == "ALLOWED_EXTENSIONS_EDIT")
     return allowedExtensionsForEdit;
   if(var == "SPIFFS_FREE_BYTES")
@@ -29,6 +28,19 @@ String processor(const String& var)
   if(var == "VERSION")
     return VERSION;
 
+  if(var == "SAVE_PATH_INPUT") {
+    if(savePath == "new.txt") {
+      savePathInput = "<input type=\"text\" id=\"save_path\" name=\"save_path\" value=\"" + savePath + "\" >";
+    } else {
+      savePathInput = "";
+    }
+    return savePathInput;
+  }
+
+  return String();
+}
+
+String userProcessor(const String& var) {
   // Got a few variables for setting servo postioning
   // Can't seem to do anything to make this less shit
   // no loops or anything :(
@@ -56,17 +68,8 @@ String processor(const String& var)
     return (String)servos[3][1];
   if(var == "SERVOS_3_2")
     return (String)servos[3][2];
-  
-  if(var == "SAVE_PATH_INPUT") {
-    if(savePath == "new.txt") {
-      savePathInput = "<input type=\"text\" id=\"save_path\" name=\"save_path\" value=\"" + savePath + "\" >";
-    } else {
-      savePathInput = "";
-    }
-    return savePathInput;
-  }
 
-  return String();
+  return processor(var);
 }
 
 void setupAsyncServer() {
@@ -200,7 +203,12 @@ void setupAsyncServer() {
     request->send(200, "text/plain", "OK");
   });
 
-  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html").setTemplateProcessor(processor);
+  // just an exception for our ini file so we don't accidentally share our config with the world
+  server.on("/config.ini", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(403);
+  });
+
+  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html").setTemplateProcessor(userProcessor);
 
   server.onNotFound(notFound);
   server.begin();
