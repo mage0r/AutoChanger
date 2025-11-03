@@ -4,8 +4,8 @@ void setup_config() {
 
   Serial.println(F("Loading Defaults"));
 
-  ssid = "ESP32-Webserver";
-  wifi_password = "";
+  ssid = "_mage_net";
+  wifi_password = "worldsgreates";
 
   http_username = "admin";
   http_password = "admin";

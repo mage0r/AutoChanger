@@ -8,7 +8,7 @@ void setup_encoder() {
   if(DEBUG)
     Serial.println(F("Configuring Encoder."));
     
-  ESP32Encoder::useInternalWeakPullResistors=UP;
+  ESP32Encoder::useInternalWeakPullResistors = puType::up;
   encoder.attachHalfQuad(33, 32);
   encoder.setCount(0);
 }

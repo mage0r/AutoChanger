@@ -21,14 +21,6 @@
 #include <TinyPICO.h>
 
 
-#include <WiFi.h>
-#include <WiFiClient.h>
-#include <WebServer.h>
-#include <ESPmDNS.h>
-#include <Update.h>
-#include <WiFiManager.h> 
-
-
 byte DEBUG = 1; // Do we want debug output on serial.
 // 0 is off.
 // 1 is default logs.
@@ -84,7 +76,7 @@ byte buttonExec[4] = {false,false,false,false};
 boolean pgrmState = false;
 
 // Debouncing
-Bounce debouncer[4] = Bounce();
+Bounce * debouncer = new Bounce[4];
 byte previousButton;
 Bounce pgrmDebouncer = Bounce();
 unsigned long buttonPressTimeStamp;
@@ -126,10 +118,6 @@ void IRAM_ATTR arm_sensor_handler();
 //time logging.
 unsigned long timeLogging[2][11] = {{0,0,0,0,0,0,0,0,0,0,0},
                                     {0,0,0,0,0,0,0,0,0,0,0}};
-
-// webserver
-WiFiManager wm;
-WebServer server(80);
 
 void setup() {
   Serial.begin(115200);
