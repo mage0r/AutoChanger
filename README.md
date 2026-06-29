@@ -5,7 +5,7 @@ This project was designed to provide a lower cost replacement for the commercial
 
 You can read about the progress of this design at the following links:
 
-[Building a better colour changer - Part 1 - Designing Hardware](http://heartofpluto.co/2017/04/25/building-a-better-colour-changer-part-1-designing-hardware/)
+[Building a better colour changer - Part 1 - Designing Hardware](https://github.com/mage0r/AutoChanger/wiki/Building-a-better-Colour-Changer-%E2%80%93-Part-1-%E2%80%93-Designing-hardware)
 
 [Building a better colour changer - Part 2 - Firing the lasers](http://heartofpluto.co/2017/05/08/building-a-better-colour-changer-part-2-firing-the-lasers/)
 
