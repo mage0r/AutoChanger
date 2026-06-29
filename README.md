@@ -7,9 +7,11 @@ You can read about the progress of this design at the following links:
 
 [Building a better colour changer - Part 1 - Designing Hardware](https://github.com/mage0r/AutoChanger/wiki/Building-a-better-Colour-Changer-%E2%80%93-Part-1-%E2%80%93-Designing-hardware)
 
-[Building a better colour changer - Part 2 - Firing the lasers](http://heartofpluto.co/2017/05/08/building-a-better-colour-changer-part-2-firing-the-lasers/)
+[Building a better colour changer - Part 2 - Firing the lasers](https://github.com/mage0r/AutoChanger/wiki/Building-a-better-Colour-Changer-%E2%80%93-Part-2-%E2%80%93-Firing-the-Lasers)
 
-[Building a Better Colour Changer – Part 3 – Revising the design](http://heartofpluto.co/2017/10/21/building-a-better-colour-changer-part-3-revising-the-design/)
+[Building a Better Colour Changer – Interlude – The KRC-1000E](https://github.com/mage0r/AutoChanger/wiki/Building-a-Better-Colour-Changer-%E2%80%93-Interlude-%E2%80%93-The-KRC%E2%80%901000E)
+
+[Building a Better Colour Changer – Part 3 – Revising the design](https://github.com/mage0r/AutoChanger/wiki/Building-a-Better-Colour-Changer-%E2%80%93-Part-3-%E2%80%93-Revising-the-design)
 
 ![Circuit Board Render](Controller/AutoChanger.png?raw=true "Circuit")
 The Arduino Nano based controller.
