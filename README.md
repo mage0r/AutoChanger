@@ -13,23 +13,9 @@ You can read about the progress of this design at the following links:
 
 [Building a Better Colour Changer – Part 3 – Revising the design](https://github.com/mage0r/AutoChanger/wiki/Building-a-Better-Colour-Changer-%E2%80%93-Part-3-%E2%80%93-Revising-the-design)
 
-![Circuit Board Render](Controller/AutoChanger.png?raw=true "Circuit")
-The Arduino Nano based controller.
+For the sake of completeness, the early versions of this project are described at [Hardware Version 1.0 to 2.0]https://github.com/mage0r/AutoChanger/wiki/Hardware-Version-1.0-to-2.0)
 
 
-[Schematic Design](Controller/AutoChanger.pdf?raw=true "Schematic")
-
-
-![Prototype Render](Hardware/changer.v.1.6.jpg?raw=true "Render")
-
-
-FEATURES
---------
-
-* Arduino Uno compatible.
-* Automatically change between 4 different colours.
-* Audio guides.
-* Programable colour order.
 
 CREDITS
 ------------
