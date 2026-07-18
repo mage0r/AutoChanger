@@ -1,4 +1,4 @@
 (fp_lib_table
-  (lib (name libs)(type KiCad)(uri "$(KIPRJMOD)/libs")(options "")(descr ""))
-  (lib (name arduino)(type KiCad)(uri "$(KIPRJMOD)/subs/kicad-libraries/packages/arduino.pretty")(options "")(descr ""))
+	(version 7)
+	(lib (name "libs") (type "KiCad") (uri "$(KIPRJMOD)/libs") (options "") (descr ""))
 )
