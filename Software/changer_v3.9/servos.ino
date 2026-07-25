@@ -91,7 +91,7 @@ void load_servos(fs::FS &fs, const char * path) {
     Serial.println(F(" - Success!"));
   }
 
-  byte counter1 = 0;
+  byte counter1 = 0; // the number of lines
   byte counter2 = 0;
   int counter3 = 0;
   
@@ -103,7 +103,7 @@ void load_servos(fs::FS &fs, const char * path) {
 
       if(temp == ',') {
         if(counter2 == 0) // it's the first number, which is the number of operations for each servo.
-          servoCount[counter2] = counter3;
+          servoCount[counter1] = counter3;
         else
           servos[counter1][counter2-1] = counter3;
         counter2++;
@@ -150,8 +150,8 @@ void load_servos(fs::FS &fs, const char * path) {
 
 void default_servos(){
     for(int x = 0; x < 4; x++) {
-        servos[x][0] = 150;
-        servos[x][1] = 520;
+        servos[x][0] = 150; // 160 // 170
+        servos[x][1] = 520; //470 //450
         servos[x][2] = 600;
     }
 
