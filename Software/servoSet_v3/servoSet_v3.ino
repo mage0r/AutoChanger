@@ -1,8 +1,8 @@
 /*
- * Standalone test: press a button on IO4 to run one burn-in cycle
- * (servos 0-3 each move low -> high once, one servo at a time).
- * Each press runs exactly one cycle; press again for the next one.
- * A running total cycle count is tracked and printed.
+ * Standalone test: press a button on IO4 to run a burn-in test -
+ * servos 0-3 each move low -> high, 10 cycles through, one servo at
+ * a time. When all 10 cycles finish, every servo is returned to its
+ * low position. A running total cycle count is tracked and printed.
  *
  * Low/high positions are per-servo and are loaded from / saved to
  * "/servos.txt" on SPIFFS, using the exact same format as the main
@@ -16,6 +16,8 @@
  *
  *   L<servo> <value>   e.g. "L0 200"  - set & move servo 0 to low position
  *   H<servo> <value>   e.g. "H0 550"  - set & move servo 0 to high position
+ *   A<value>           e.g. "A300"    - park ALL servos at this position (not saved)
+ *   R                  - run a burn-in cycle (same as pressing IO4)
  *   P                  - print current values
  *   S                  - save current values to SPIFFS
  *
@@ -33,6 +35,7 @@
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
 const int NUM_SERVOS = 4;
+const int CYCLES = 10;
 const int MOVE_DELAY = 500; // ms to wait after each move
 const int TRIGGER_PIN = 4;  // IO4
 
@@ -52,8 +55,8 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println(F("Servo burn-in test ready."));
-  Serial.println(F("Press the dial down to run one burn-in cycle (10 iterations of up down for each servo)."));
-  Serial.println(F("Serial commands: L<servo> <val>, H<servo> <val> (moves servo), P (print), S (save)"));
+  Serial.println(F("Press the button on IO4 to run one burn-in cycle."));
+  Serial.println(F("Serial commands: L<servo> <val>, H<servo> <val> (moves servo), A<val> (park all), R (run cycle), P (print), S (save)"));
 
   if (!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)) {
     Serial.println(F("SPIFFS mount failed!"));
@@ -83,26 +86,35 @@ void loop() {
 }
 
 void runBurnInCycle() {
-  burnInCycleCount++;
-  Serial.print(F("Burn-in cycle "));
-  Serial.println(burnInCycleCount);
+  Serial.println(F("Button pressed - starting burn-in test."));
 
-  for (int servo = 0; servo < NUM_SERVOS; servo++) {
-    Serial.print(F("  Servo "));
-    Serial.print(servo);
-    Serial.print(F(" -> "));
-    Serial.println(servos[servo][0]);
-    pwm.setPWM(servo, 0, servos[servo][0]);
-    servoCount[servo]++;
-    delay(MOVE_DELAY);
+  for (int cycle = 1; cycle <= CYCLES; cycle++) {
+    burnInCycleCount++;
+    Serial.print(F("Cycle "));
+    Serial.print(cycle);
+    Serial.print(F(" of "));
+    Serial.print(CYCLES);
+    Serial.print(F(" (total: "));
+    Serial.print(burnInCycleCount);
+    Serial.println(F(")"));
 
-    Serial.print(F("  Servo "));
-    Serial.print(servo);
-    Serial.print(F(" -> "));
-    Serial.println(servos[servo][1]);
-    pwm.setPWM(servo, 0, servos[servo][1]);
-    servoCount[servo]++;
-    delay(MOVE_DELAY);
+    for (int servo = 0; servo < NUM_SERVOS; servo++) {
+      Serial.print(F("  Servo "));
+      Serial.print(servo);
+      Serial.print(F(" -> "));
+      Serial.println(servos[servo][0]);
+      pwm.setPWM(servo, 0, servos[servo][0]);
+      servoCount[servo]++;
+      delay(MOVE_DELAY);
+
+      Serial.print(F("  Servo "));
+      Serial.print(servo);
+      Serial.print(F(" -> "));
+      Serial.println(servos[servo][1]);
+      pwm.setPWM(servo, 0, servos[servo][1]);
+      servoCount[servo]++;
+      delay(MOVE_DELAY);
+    }
   }
 
   Serial.println(F("Returning all servos to low."));
@@ -111,7 +123,7 @@ void runBurnInCycle() {
     delay(MOVE_DELAY);
   }
 
-  Serial.println(F("Cycle complete. Press button for the next cycle."));
+  Serial.println(F("Burn-in test complete. Press button to run again."));
 }
 
 // ---- Serial command handling ----
@@ -130,6 +142,21 @@ void handleSerialCommand() {
 
   if (cmd == 'S') {
     save_servos(SPIFFS, "/servos.txt");
+    return;
+  }
+
+  if (cmd == 'R') {
+    runBurnInCycle();
+    return;
+  }
+
+  if (cmd == 'A') {
+    long value = 0;
+    if (sscanf(line.c_str() + 1, "%ld", &value) == 1) {
+      parkAllServos(value);
+    } else {
+      Serial.println(F("Usage: A<value>  e.g. A300"));
+    }
     return;
   }
 
@@ -157,7 +184,17 @@ void handleSerialCommand() {
     return;
   }
 
-  Serial.println(F("Unknown command. Use L<servo> <val>, H<servo> <val>, P, or S."));
+  Serial.println(F("Unknown command. Use L<servo> <val>, H<servo> <val>, A<val>, R, P, or S."));
+}
+
+// Parks every servo at an arbitrary position. Doesn't touch the
+// stored low/high config or SPIFFS - purely a physical move.
+void parkAllServos(long value) {
+  Serial.print(F("Parking all servos at "));
+  Serial.println(value);
+  for (int servo = 0; servo < NUM_SERVOS; servo++) {
+    pwm.setPWM(servo, 0, value);
+  }
 }
 
 void printServos() {

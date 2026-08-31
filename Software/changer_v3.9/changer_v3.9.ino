@@ -106,7 +106,7 @@ int currentPattern = 0;
 byte pattern[4][21];
 byte displayPattern[20];
 
-unsigned int test_run = 100;
+unsigned int test_run = 10;
 
 // Non-blocking tones
 unsigned long tone_off;
@@ -313,7 +313,7 @@ void TestRun() {
   // Trigger a testrun if the program button is held down during start.
 
   Serial.println(F("Entering Test Mode."));
-  Serial.println(F("Executing 100 cycles of the servos."));
+  Serial.println(F("Executing 10 cycles of the servos."));
   
   for (int y = 0; y < test_run; y++) {
     for (int x = 0; x < maxServo; x++) {
@@ -332,7 +332,5 @@ void TestRun() {
       moveServo(x,2);
       delay(400);
     }
-
-    //writeEEPROM(); // update the eeprom if needed.
   }
 }
