@@ -15,7 +15,7 @@ You can read about the progress of this design at the following links:
 
 For the sake of completeness, the early versions of this project are described at [Hardware Version 1.0 to 2.0]https://github.com/mage0r/AutoChanger/wiki/Hardware-Version-1.0-to-2.0)
 
-
+Version 2.0 to 3.0 was TinyPico Based.  You can read about it at [Hardware Version 2.0 to 3.0](https://github.com/mage0r/AutoChanger/wiki/Hardware-Version-2.0-to-3.0)
 
 CREDITS
 ------------
