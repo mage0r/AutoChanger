@@ -17,6 +17,15 @@ For the sake of completeness, the early versions of this project are described a
 
 Version 2.0 to 3.0 was TinyPico Based.  You can read about it at [Hardware Version 2.0 to 3.0](https://github.com/mage0r/AutoChanger/wiki/Hardware-Version-2.0-to-3.0)
 
+Version 3.0 is a whole new build using an ESP32s3.  You can read about it at [Hardware Version 3.0](https://github.com/mage0r/AutoChanger/wiki/Hardware-Version-3.0)
+
+How to use your AutoChanger
+============
+
+Thanks for purchasing or building your own AutoChanger.  I've put together a page of all the different features for you to try.
+
+[How to Use Your AutoChanger](https://github.com/mage0r/AutoChanger/wiki/How-to-use-Firmware-Version-3.9)
+
 CREDITS
 ------------
 
