@@ -40,8 +40,8 @@
         "other_text_upright": false,
         "pads": {
           "drill": 1.0,
-          "height": 1.0,
-          "width": 1.0
+          "height": 1.524,
+          "width": 1.524
         },
         "silk_line_width": 0.15,
         "silk_text_italic": false,
@@ -731,7 +731,7 @@
       "gencad": "",
       "idf": "",
       "netlist": "AutoChanger.net",
-      "plot": "Gerber/",
+      "plot": "Gerber_small/",
       "pos_files": "",
       "specctra_dsn": "",
       "step": "",
@@ -746,7 +746,7 @@
       "method": 0,
       "sort_order": 0
     },
-    "bom_export_filename": "AutoChanger.3.0.csv",
+    "bom_export_filename": "AutoChanger.3.1.csv",
     "bom_fmt_presets": [],
     "bom_fmt_settings": {
       "field_delimiter": ",",
@@ -929,7 +929,7 @@
         "uuid": "630f16b1-3d9f-4581-b946-2d3b1efe008b"
       }
     ],
-    "used_designators": "J4-5,#PWR28-29,#PWR33-34",
+    "used_designators": "",
     "variants": []
   },
   "sheets": [
