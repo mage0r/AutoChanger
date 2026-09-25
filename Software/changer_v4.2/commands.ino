@@ -27,10 +27,11 @@ const CommandHelp commandTable[] = {
   {"HELP", "Lists all available commands."},
   {"WIFI <ssid>,<password>", "Sets and saves the WiFi SSID/password, and reconnects immediately if WiFi is currently enabled."},
   {"WIFI_ENABLE ON|OFF", "Turns WiFi on or off and saves the setting."},
-  {"INFO", "Shows SPIFFS usage, project/build info, RAM and PSRAM."},
+  {"INFO", "Shows project/build info, IP, chip model/revision, flash size, sketch size/free space, RAM, PSRAM, and SPIFFS usage."},
   {"LS", "Lists files in SPIFFS with their sizes."},
   {"CAT <filename>", "Prints a file's contents."},
   {"RM <filename>", "Deletes a file. No confirmation - this is permanent."},
+  {"FIX", "Restores any missing default files (config.ini, patterns.txt, servos.txt, index.html, autochanger.svg, manage.html, ok.html, edit.html, failed.html). Leaves existing files untouched."},
 };
 const byte commandTableSize = sizeof(commandTable) / sizeof(commandTable[0]);
 
@@ -90,6 +91,8 @@ void processCommand(String cmd) {
     cmd_cat(args);
   } else if(command == "RM") {
     cmd_rm(args);
+  } else if(command == "FIX") {
+    cmd_fix();
   } else {
     commandError(F("unknown command - send HELP for the list"));
   }
@@ -175,6 +178,32 @@ void cmd_info() {
   Serial.print(F(" "));
   Serial.println(__TIME__);
 
+  Serial.print(F("IP: "));
+  if(!wifi_enabled) {
+    Serial.println(F("off"));
+  } else if(!wifi_connected) {
+    Serial.println(F("connecting..."));
+  } else if(WiFi.getMode() == WIFI_AP) {
+    Serial.println(WiFi.softAPIP());
+  } else {
+    Serial.println(WiFi.localIP());
+  }
+
+  Serial.print(F("Chip: "));
+  Serial.print(ESP.getChipModel());
+  Serial.print(F(" rev"));
+  Serial.println(ESP.getChipRevision());
+
+  Serial.print(F("Flash Size: "));
+  Serial.print(ESP.getFlashChipSize() / 1024 / 1024);
+  Serial.println(F(" MB"));
+
+  Serial.print(F("Sketch Size: "));
+  Serial.print(ESP.getSketchSize() / 1024);
+  Serial.print(F(" KB, Free Sketch Space: "));
+  Serial.print(ESP.getFreeSketchSpace() / 1024);
+  Serial.println(F(" KB"));
+
   Serial.print(F("RAM: "));
   Serial.print(convertFileSize(ESP.getFreeHeap()));
   Serial.print(F(" / "));
@@ -252,4 +281,50 @@ void cmd_rm(String args) {
   } else {
     commandError(F("file not found or could not be removed"));
   }
+}
+
+// FIX - restores any missing default files. Checks each one first so existing files (your
+// actual patterns, servo positions, config, or any HTML you've customised) are never touched -
+// only genuinely missing files get recreated.
+void cmd_fix() {
+  byte restored = 0;
+
+  if(!SPIFFS.exists("/config.ini")) {
+    save_config(SPIFFS, "/config.ini");
+    Serial.println(F("Restored /config.ini"));
+    restored++;
+  }
+
+  if(!SPIFFS.exists("/patterns.txt")) {
+    RestoreDefault(0);
+    RestoreDefault(1);
+    RestoreDefault(2);
+    RestoreDefault(3);
+    save_patterns(SPIFFS, "/patterns.txt");
+    Serial.println(F("Restored /patterns.txt"));
+    restored++;
+  }
+
+  if(!SPIFFS.exists("/servos.txt")) {
+    default_servos(); // sets defaults, moves arms to eject, and saves
+    Serial.println(F("Restored /servos.txt"));
+    restored++;
+  }
+
+  const char* htmlPath[] = {"/index.html", "/autochanger.svg", "/manage.html", "/ok.html", "/edit.html", "/failed.html"};
+  const char* htmlContent[] = {index_html, autochanger_svg, manager_html, ok_html, edit_html, failed_html};
+  for(byte i = 0; i < 6; i++) {
+    if(!SPIFFS.exists(htmlPath[i])) {
+      Serial.print(F("Restored "));
+      Serial.println(htmlPath[i]);
+      restored++;
+    }
+    save_html(SPIFFS, htmlPath[i], htmlContent[i]); // no-op if it already exists
+  }
+
+  if(restored == 0) {
+    Serial.println(F("Nothing missing."));
+  }
+
+  commandOK();
 }

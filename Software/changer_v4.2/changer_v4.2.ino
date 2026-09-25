@@ -12,6 +12,7 @@
  * The TinyPICO's are a bit pricey and getting hard to get.
  *  
  *  Oh god, please don't keep reading this code.  It is awful.
+ *  Claude has assisted me heavily since v3.9.  It has not made anything any easier to read.
  *  
  *
  ****************************************************/
@@ -121,7 +122,8 @@ void setup() {
   Serial.print(F("Build Date: "));
   Serial.println(F(__DATE__ " " __TIME__));
   Serial.print(F("Free Ram: "));
-  Serial.println(ESP.getFreeHeap());
+  Serial.print(ESP.getFreeHeap() / 1024);
+  Serial.println(F(" KB"));
 
   // Chip/flash identity - compare "Flash Size" against whatever the Arduino IDE's
   // Tools > Flash Size is set to. A mismatch there (not in this code) is the usual

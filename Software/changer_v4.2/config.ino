@@ -35,7 +35,7 @@ void load_config(fs::FS &fs, const char * path) {
       Serial.println(F("Creating Default Configuration."));
       save_config(SPIFFS, path);
       save_html(SPIFFS, "/index.html", index_html);
-      save_html(SPIFFS, "/arms.svg", arms_svg);
+      save_html(SPIFFS, "/autochanger.svg", autochanger_svg);
       save_html(SPIFFS, "/manage.html", manager_html);
       save_html(SPIFFS, "/ok.html", ok_html);
       save_html(SPIFFS, "/edit.html", edit_html);

@@ -26,6 +26,24 @@ String processor(const String& var)
   if(var == "VERSION")
     return VERSION;
 
+  if(var == "CHIPMODEL")
+    return String(ESP.getChipModel()) + " rev" + String(ESP.getChipRevision());
+  if(var == "FLASHSIZE")
+    return String(ESP.getFlashChipSize() / 1024 / 1024) + " MB";
+  if(var == "SKETCHSIZE")
+    return String(ESP.getSketchSize() / 1024) + " KB";
+  if(var == "FREESKETCHSPACE")
+    return String(ESP.getFreeSketchSpace() / 1024) + " KB";
+  if(var == "IPADDRESS") {
+    if(!wifi_enabled)
+      return "off";
+    if(!wifi_connected)
+      return "connecting...";
+    if(WiFi.getMode() == WIFI_AP)
+      return WiFi.softAPIP().toString();
+    return WiFi.localIP().toString();
+  }
+
   return String();
 }
 
@@ -199,7 +217,13 @@ void setupAsyncServer() {
     String json = "{";
     json += "\"pattern\":" + String(currentPattern) + ",";
     json += "\"length\":" + String(patterns[currentPattern].length) + ",";
-    json += "\"active\":" + String(activeArm);
+    json += "\"active\":" + String(activeArm) + ",";
+    json += "\"patterns\":[";
+    for(int i = 0; i < 4; i++) {
+      if(i > 0) json += ",";
+      json += "\"" + String(patterns[i].steps) + "\"";
+    }
+    json += "]";
     json += "}";
     request->send(200, "application/json", json);
   });
@@ -209,6 +233,63 @@ void setupAsyncServer() {
     if(request->hasParam("arm")) {
       webPressButton(request->getParam("arm")->value().toInt());
     }
+    request->send(200);
+  });
+
+  // Switches the active pattern, same as holding a number button 2s on the main page.
+  server.on("/switch", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(request->hasParam("pattern")) {
+      int n = request->getParam("pattern")->value().toInt();
+      if(n >= 0 && n <= 3) {
+        change_program(n);
+      }
+    }
+    request->send(200);
+  });
+
+  // Sets one pattern's step sequence directly - ?n=0-3&steps=0123 (digits 0-3 only).
+  // Re-syncs the arm if the pattern being edited is the currently active one.
+  server.on("/setpattern", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->hasParam("n") || !request->hasParam("steps")) {
+      request->send(400, "text/plain", "missing n or steps");
+      return;
+    }
+
+    int n = request->getParam("n")->value().toInt();
+    if(n < 0 || n > 3) {
+      request->send(400, "text/plain", "n must be 0-3");
+      return;
+    }
+
+    String steps = request->getParam("steps")->value();
+    if(steps.length() > MAX_PATTERN_LENGTH) {
+      request->send(400, "text/plain", "sequence too long");
+      return;
+    }
+    for(unsigned int i = 0; i < steps.length(); i++) {
+      if(steps[i] < '0' || steps[i] > '3') {
+        request->send(400, "text/plain", "sequence must only contain digits 0-3");
+        return;
+      }
+    }
+
+    steps.toCharArray(patterns[n].steps, MAX_PATTERN_LENGTH+1);
+    patterns[n].length = steps.length();
+    save_patterns(SPIFFS, "/patterns.txt");
+
+    if(n == currentPattern) {
+      // re-sync the physical arm to match the freshly edited sequence.
+      for (int x = 0; x < 4; x++) {
+        moveServo(x, 0);
+      }
+      if(patterns[currentPattern].length) {
+        servonum = 1;
+        moveServo(patterns[currentPattern].steps[0] - '0', 1);
+      } else {
+        servonum = -1;
+      }
+    }
+
     request->send(200);
   });
 
