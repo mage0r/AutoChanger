@@ -3,6 +3,8 @@
 A simple GUI tool for updating an AutoChanger unit's firmware over USB,
 without touching anything saved on the device (patterns, config, etc).
 
+This was largely written by Claude Sonnet 5.
+
 ## Why this is safe
 
 This tool writes **only** to the two app slots, `app0` (flash offset `0x10000`) and
