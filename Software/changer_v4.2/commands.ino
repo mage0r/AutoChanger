@@ -46,6 +46,7 @@ const CommandHelp commandTable[] = {
   {"RM <filename>", "Deletes a file. No confirmation - this is permanent."},
   {"FIX", "Restores any missing default files (config.ini, patterns.txt, servos.txt, index.html, autochanger.svg, manage.html, ok.html, edit.html, failed.html, join.html, joining.html). Leaves existing files untouched."},
   {"REBOOT", "Restarts the device immediately."},
+  {"EJECT_ALL", "Moves every arm to its EJECT position."},
 };
 const byte commandTableSize = sizeof(commandTable) / sizeof(commandTable[0]);
 
@@ -127,6 +128,8 @@ void processCommand(String cmd) {
     cmd_fix();
   } else if(command == "REBOOT") {
     cmd_reboot();
+  } else if(command == "EJECT_ALL") {
+    cmd_ejectAll();
   } else {
     commandError(F("unknown command - send HELP for the list"));
   }
@@ -371,6 +374,15 @@ void cmd_reboot() {
   Serial.flush();
   delay(100);
   ESP.restart();
+}
+
+// EJECT_ALL - moves every arm to its EJECT position (servos[x][2]), the same
+// position TEST/EJECT on the arm-adjust menu moves the selected arm to.
+void cmd_ejectAll() {
+  for(int x = 0; x < maxServo; x++) {
+    moveServo(x, 2);
+  }
+  commandOK();
 }
 
 void cmd_fix() {
