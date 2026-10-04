@@ -14,8 +14,20 @@
  * place to add an entry (syntax + description) whenever a new command is added.
  */
 
+#define MAX_PUT_SIZE 262144 // 256KB - a generous sanity cap, not a real limit any file here approaches
+
 String serialCommandBuffer = "";
 String currentCommandLine = ""; // the raw line currently being processed, for commandOK()/commandError()
+
+// State for an in-progress PUT (see cmd_put() and the top of readSerialCommands()).
+// Writes land in a .tmp file first and only replace the real file once every byte
+// has arrived, so a transfer that gets interrupted partway through (e.g. a USB
+// disconnect) can't leave a half-written file in place of a good one.
+File putFile;
+long putBytesRemaining = 0;
+String putTargetPath = "";
+String putTempPath = "";
+String putEchoLine = ""; // currentCommandLine at the time PUT started, for the final :OK/:ERR
 
 struct CommandHelp {
   const char* syntax;
@@ -30,8 +42,9 @@ const CommandHelp commandTable[] = {
   {"INFO", "Shows project/build info, IP, chip model/revision, flash size, sketch size/free space, RAM, PSRAM, and SPIFFS usage."},
   {"LS", "Lists files in SPIFFS with their sizes."},
   {"CAT <filename>", "Prints a file's contents."},
+  {"PUT <filename> <size>", "Writes a file - exactly <size> raw bytes must follow this line immediately. Used by the deploy tool to restore a backup."},
   {"RM <filename>", "Deletes a file. No confirmation - this is permanent."},
-  {"FIX", "Restores any missing default files (config.ini, patterns.txt, servos.txt, index.html, autochanger.svg, manage.html, ok.html, edit.html, failed.html). Leaves existing files untouched."},
+  {"FIX", "Restores any missing default files (config.ini, patterns.txt, servos.txt, index.html, autochanger.svg, manage.html, ok.html, edit.html, failed.html, join.html, joining.html). Leaves existing files untouched."},
   {"REBOOT", "Restarts the device immediately."},
 };
 const byte commandTableSize = sizeof(commandTable) / sizeof(commandTable[0]);
@@ -48,9 +61,25 @@ void commandError(const String &reason) {
   Serial.println(reason);
 }
 
-// Call every loop() - reads whatever's arrived on Serial and dispatches complete lines.
+// Call every loop() - reads whatever's arrived on Serial and dispatches complete lines,
+// except while a PUT transfer is in progress, when incoming bytes are the file's raw
+// content instead and go straight to putFile until the expected count is reached.
 void readSerialCommands() {
   while(Serial.available()) {
+    if(putBytesRemaining > 0) {
+      putFile.write((uint8_t)Serial.read());
+      putBytesRemaining--;
+      if(putBytesRemaining == 0) {
+        putFile.close();
+        if(SPIFFS.exists(putTargetPath))
+          SPIFFS.remove(putTargetPath);
+        SPIFFS.rename(putTempPath, putTargetPath);
+        currentCommandLine = putEchoLine;
+        commandOK();
+      }
+      continue;
+    }
+
     char c = Serial.read();
     if(c == '\n') {
       serialCommandBuffer.trim();
@@ -90,6 +119,8 @@ void processCommand(String cmd) {
     cmd_ls();
   } else if(command == "CAT") {
     cmd_cat(args);
+  } else if(command == "PUT") {
+    cmd_put(args);
   } else if(command == "RM") {
     cmd_rm(args);
   } else if(command == "FIX") {
@@ -231,6 +262,59 @@ void cmd_ls() {
   commandOK();
 }
 
+// PUT <filename> <size>
+void cmd_put(String args) {
+  int spaceIndex = args.lastIndexOf(' ');
+  if(spaceIndex == -1) {
+    commandError(F("usage: PUT <filename> <size>"));
+    return;
+  }
+
+  String filename = args.substring(0, spaceIndex);
+  filename.trim();
+  long size = args.substring(spaceIndex+1).toInt();
+
+  if(filename.length() == 0) {
+    commandError(F("usage: PUT <filename> <size>"));
+    return;
+  }
+  if(size < 0 || size > MAX_PUT_SIZE) {
+    commandError("size must be between 0 and " + String(MAX_PUT_SIZE) + " bytes");
+    return;
+  }
+
+  String path = filename;
+  if(!path.startsWith("/"))
+    path = "/" + path;
+
+  putTargetPath = path;
+  putTempPath = path + ".tmp";
+
+  putFile = SPIFFS.open(putTempPath, FILE_WRITE);
+  if(!putFile) {
+    commandError(F("could not open file for writing"));
+    return;
+  }
+
+  if(size == 0) {
+    // Nothing to wait for - finish right away. The byte-consuming loop in
+    // readSerialCommands() only ever completes a transfer when putBytesRemaining
+    // counts DOWN to zero; it would never fire if it started there, so an empty
+    // file needs to be handled here instead, not left to that loop.
+    putFile.close();
+    if(SPIFFS.exists(putTargetPath))
+      SPIFFS.remove(putTargetPath);
+    SPIFFS.rename(putTempPath, putTargetPath);
+    commandOK();
+    return;
+  }
+
+  // The :OK for a non-empty file fires once the bytes have actually all arrived
+  // (see readSerialCommands()), not here - this just starts the transfer.
+  putEchoLine = currentCommandLine;
+  putBytesRemaining = size;
+}
+
 // CAT <filename>
 void cmd_cat(String args) {
   args.trim();
@@ -314,9 +398,11 @@ void cmd_fix() {
     restored++;
   }
 
-  const char* htmlPath[] = {"/index.html", "/autochanger.svg", "/manage.html", "/ok.html", "/edit.html", "/failed.html"};
-  const char* htmlContent[] = {index_html, autochanger_svg, manager_html, ok_html, edit_html, failed_html};
-  for(byte i = 0; i < 6; i++) {
+  const char* htmlPath[] = {"/index.html", "/autochanger.svg", "/manage.html", "/ok.html",
+                            "/edit.html", "/failed.html", "/join.html", "/joining.html"};
+  const char* htmlContent[] = {index_html, autochanger_svg, manager_html, ok_html,
+                               edit_html, failed_html, wifi_join_html, wifi_joining_html};
+  for(byte i = 0; i < sizeof(htmlPath) / sizeof(htmlPath[0]); i++) {
     if(!SPIFFS.exists(htmlPath[i])) {
       Serial.print(F("Restored "));
       Serial.println(htmlPath[i]);

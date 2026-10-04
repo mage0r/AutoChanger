@@ -40,6 +40,8 @@ void load_config(fs::FS &fs, const char * path) {
       save_html(SPIFFS, "/ok.html", ok_html);
       save_html(SPIFFS, "/edit.html", edit_html);
       save_html(SPIFFS, "/failed.html", failed_html);
+      save_html(SPIFFS, "/join.html", wifi_join_html);
+      save_html(SPIFFS, "/joining.html", wifi_joining_html);
       return;
   } else {
     Serial.println(F(" - Success!"));

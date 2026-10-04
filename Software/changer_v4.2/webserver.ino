@@ -211,7 +211,7 @@ void setupAsyncServer() {
   // serveStatic as normal.
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     if(WiFi.getMode() == WIFI_AP) {
-      request->send_P(200, "text/html", wifi_join_html);
+      request->send(SPIFFS, "/join.html", String(), false, processor);
     } else {
       request->send(SPIFFS, "/index.html", String(), false, processor);
     }
@@ -231,7 +231,7 @@ void setupAsyncServer() {
 
     applyWifiCredentials(newSsid, newPassword);
 
-    request->send_P(200, "text/html", wifi_joining_html);
+    request->send(SPIFFS, "/joining.html", String(), false, processor);
   });
 
   // Current arm/pattern state for the index page's live graphic. No auth - same

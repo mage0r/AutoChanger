@@ -180,9 +180,13 @@ const char autochanger_svg[] PROGMEM = R"rawliteral(<svg xmlns="http://www.w3.or
 </svg>)rawliteral";
 
 // Shown as the default page only while the unit is running as its own access point
-// (i.e. no WiFi configured yet, or it couldn't reach what was configured). Deliberately
-// self-contained - no SPIFFS file, no template placeholders - since this is the page
-// you need when something is already not working, and it should work regardless.
+// (i.e. no WiFi configured yet, or it couldn't reach what was configured). Like the
+// rest of the pages, this is just the seed content - save_html() below writes it to
+// SPIFFS once, and it's served and editable (via /manage) from there after that. The
+// trade-off versus keeping this one self-contained in PROGMEM: if SPIFFS or this
+// specific file is ever missing/corrupted AT THE SAME TIME the unit can't reach WiFi,
+// this recovery page won't load either - FIX (serial command or the file list below)
+// recreates it, but only if SPIFFS itself is still mountable.
 const char wifi_join_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head><title>AutoChanger - Join WiFi</title>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -200,9 +204,10 @@ label{font-size:14px;color:#444}
 <fieldset><legend>Join a WiFi network</legend>
 <form method="POST" action="/join">
 <label for="ssid">Network name (SSID)</label>
-<input type="text" id="ssid" name="ssid" required autofocus>
+<input type="text" id="ssid" name="ssid" required autofocus
+autocapitalize="off" autocorrect="off" spellcheck="false">
 <label for="password">Password</label>
-<input type="password" id="password" name="password">
+<input type="password" id="password" name="password" autocapitalize="off" autocorrect="off">
 <input type="submit" value="Join" class="btn">
 </form>
 </fieldset>
