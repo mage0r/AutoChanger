@@ -42,7 +42,7 @@ boolean BUZZER = 1; // Is the buzzer on or off. used to be a define, now a bool.
 
 // Set our version number.  Don't forget to update when featureset changes
 #define PROJECT "AutoChanger"
-#define VERSION "V.4.2"
+#define VERSION "V.4.2.1"
 
 #define ARM 10
 #define BUTTON_1 13

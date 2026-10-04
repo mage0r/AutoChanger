@@ -179,6 +179,48 @@ const char autochanger_svg[] PROGMEM = R"rawliteral(<svg xmlns="http://www.w3.or
 <text class="btn-label" x="-1243.0" y="645.431335">4</text></g>
 </svg>)rawliteral";
 
+// Shown as the default page only while the unit is running as its own access point
+// (i.e. no WiFi configured yet, or it couldn't reach what was configured). Deliberately
+// self-contained - no SPIFFS file, no template placeholders - since this is the page
+// you need when something is already not working, and it should work regardless.
+const char wifi_join_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html><head><title>AutoChanger - Join WiFi</title>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{background:#f7f7f7;font-family:Arial,sans-serif;padding:20px}
+fieldset{width:280px;background:#f7f7f7;margin:10px 0}
+input[type=text],input[type=password]{width:100%;padding:8px;margin:6px 0;
+border:1px solid #ccc;border-radius:4px;box-sizing:border-box}
+label{font-size:14px;color:#444}
+.btn{width:100%;padding:10px;margin-top:10px}
+.note{color:#666;font-size:13px;max-width:320px}
+</style></head><body>
+<h2>AutoChanger</h2>
+<p>This unit isn't connected to a WiFi network - you're currently connected to its own hotspot.</p>
+<fieldset><legend>Join a WiFi network</legend>
+<form method="POST" action="/join">
+<label for="ssid">Network name (SSID)</label>
+<input type="text" id="ssid" name="ssid" required autofocus>
+<label for="password">Password</label>
+<input type="password" id="password" name="password">
+<input type="submit" value="Join" class="btn">
+</form>
+</fieldset>
+<p class="note">If it can't connect within 30 seconds, this hotspot comes back so you can try again.</p>
+</body></html>)rawliteral";
+
+const char wifi_joining_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html><head><title>AutoChanger - Joining...</title>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{background:#f7f7f7;font-family:Arial,sans-serif;padding:20px}</style>
+</head><body>
+<h2>Joining network...</h2>
+<p>The unit is attempting to connect. This hotspot will disconnect shortly.</p>
+<p>If it connects, find it on your regular network at its new address (check your
+router, or try <code>http://AutoChanger.local/</code>). If it can't connect within
+30 seconds, this hotspot comes back automatically so you can try again.</p>
+</body></html>)rawliteral";
+
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head><title>AutoChanger</title>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">

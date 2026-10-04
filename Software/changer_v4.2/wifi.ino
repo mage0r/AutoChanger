@@ -1,3 +1,22 @@
+// Sets new WiFi credentials, saves them, and (if WiFi is enabled) forces a fresh
+// connection attempt rather than waiting on whatever was already happening.
+// Shared by the serial WIFI command and the web /join page, so both behave
+// identically and there's only one place that does this.
+void applyWifiCredentials(String newSsid, String newPassword) {
+  ssid = newSsid;
+  wifi_password = newPassword;
+  save_config(SPIFFS, "/config.ini");
+
+  if(wifi_enabled) {
+    // Force a reconnect with the new credentials rather than waiting on the old one.
+    // WiFi.disconnect() also drops the AP if one is currently running - setup_wifi()
+    // will switch the radio to WIFI_STA on its next 1-second pass.
+    WiFi.disconnect(true);
+    wifi_connected = false;
+    wifi_counter = millis(); // fresh 30s window to connect before falling back to AP mode
+  }
+}
+
 void setup_wifi() 
 {
   if(ssid == PROJECT) {

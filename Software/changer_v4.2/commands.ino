@@ -32,6 +32,7 @@ const CommandHelp commandTable[] = {
   {"CAT <filename>", "Prints a file's contents."},
   {"RM <filename>", "Deletes a file. No confirmation - this is permanent."},
   {"FIX", "Restores any missing default files (config.ini, patterns.txt, servos.txt, index.html, autochanger.svg, manage.html, ok.html, edit.html, failed.html). Leaves existing files untouched."},
+  {"REBOOT", "Restarts the device immediately."},
 };
 const byte commandTableSize = sizeof(commandTable) / sizeof(commandTable[0]);
 
@@ -93,6 +94,8 @@ void processCommand(String cmd) {
     cmd_rm(args);
   } else if(command == "FIX") {
     cmd_fix();
+  } else if(command == "REBOOT") {
+    cmd_reboot();
   } else {
     commandError(F("unknown command - send HELP for the list"));
   }
@@ -123,16 +126,7 @@ void cmd_setWifi(String args) {
     return;
   }
 
-  ssid = newSsid;
-  wifi_password = newPassword;
-  save_config(SPIFFS, "/config.ini");
-
-  if(wifi_enabled) {
-    // Force a reconnect with the new credentials rather than waiting on the old connection.
-    WiFi.disconnect(true);
-    wifi_connected = false;
-    wifi_counter = millis(); // fresh 30s window to connect before falling back to AP mode
-  }
+  applyWifiCredentials(newSsid, newPassword);
 
   commandOK();
 }
@@ -286,6 +280,15 @@ void cmd_rm(String args) {
 // FIX - restores any missing default files. Checks each one first so existing files (your
 // actual patterns, servo positions, config, or any HTML you've customised) are never touched -
 // only genuinely missing files get recreated.
+// REBOOT - sends OK first (and makes sure it's actually out over the wire) so the
+// caller gets confirmation before the connection drops, then restarts immediately.
+void cmd_reboot() {
+  commandOK();
+  Serial.flush();
+  delay(100);
+  ESP.restart();
+}
+
 void cmd_fix() {
   byte restored = 0;
 

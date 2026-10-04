@@ -204,6 +204,36 @@ void setupAsyncServer() {
     request->send(403);
   });
 
+  // Root page: the WiFi join page while we're our own access point (nothing configured,
+  // or couldn't reach what was configured), the normal status page otherwise. Registered
+  // before serveStatic's default-file handling below, so it takes priority for "/" while
+  // every other path (including a direct request for /index.html) still falls through to
+  // serveStatic as normal.
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(WiFi.getMode() == WIFI_AP) {
+      request->send_P(200, "text/html", wifi_join_html);
+    } else {
+      request->send(SPIFFS, "/index.html", String(), false, processor);
+    }
+  });
+
+  // Submits new WiFi credentials from the join page above. No auth - if you can see
+  // this unit's own hotspot to get here, you're already as "in" as auth would protect
+  // against, and the join page itself has no auth either.
+  server.on("/join", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if(!request->hasParam("ssid", true) || request->getParam("ssid", true)->value().length() == 0) {
+      request->send(400, "text/plain", "ssid can't be empty");
+      return;
+    }
+    String newSsid = request->getParam("ssid", true)->value();
+    String newPassword = request->hasParam("password", true)
+      ? request->getParam("password", true)->value() : "";
+
+    applyWifiCredentials(newSsid, newPassword);
+
+    request->send_P(200, "text/html", wifi_joining_html);
+  });
+
   // Current arm/pattern state for the index page's live graphic. No auth - same
   // openness as index.html itself, and nothing here is sensitive or destructive.
   server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -221,7 +251,11 @@ void setupAsyncServer() {
     json += "\"patterns\":[";
     for(int i = 0; i < 4; i++) {
       if(i > 0) json += ",";
-      json += "\"" + String(patterns[i].steps) + "\"";
+      String logical = patterns[i].steps; // convert stored 0-3 to the logical 1-4 the unit itself displays
+      for(unsigned int j = 0; j < logical.length(); j++) {
+        logical[j] = logical[j] + 1;
+      }
+      json += "\"" + logical + "\"";
     }
     json += "]";
     json += "}";
@@ -267,10 +301,15 @@ void setupAsyncServer() {
       return;
     }
     for(unsigned int i = 0; i < steps.length(); i++) {
-      if(steps[i] < '0' || steps[i] > '3') {
-        request->send(400, "text/plain", "sequence must only contain digits 0-3");
+      if(steps[i] < '1' || steps[i] > '4') {
+        request->send(400, "text/plain", "sequence must only contain digits 1-4");
         return;
       }
+    }
+
+    // convert the logical 1-4 the page shows back to the stored 0-3 array index.
+    for(unsigned int i = 0; i < steps.length(); i++) {
+      steps[i] = steps[i] - 1;
     }
 
     steps.toCharArray(patterns[n].steps, MAX_PATTERN_LENGTH+1);
