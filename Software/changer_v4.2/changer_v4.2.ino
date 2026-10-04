@@ -44,15 +44,15 @@ boolean BUZZER = 1; // Is the buzzer on or off. used to be a define, now a bool.
 #define PROJECT "AutoChanger"
 #define VERSION "V.4.2.3"
 
-#define ARM 10
-#define BUTTON_1 13
-#define BUTTON_2 14
-#define BUTTON_3 15
-#define BUTTON_4 16
-#define PGRM_BTN 4
-#define PGRM_A 6
-#define PGRM_B 5
-#define BUZZER_PIN 1
+#define ARM 10 // Sensor pin indicating when the carriage has cleared the unit // Legacy is 23
+#define BUTTON_1 13 // Right most Button labeled "1" // Legacy is 27
+#define BUTTON_2 14 // Center Right most Button labeled "2" // Legacy is 26
+#define BUTTON_3 15 // Center left most Button labeled "3" // Legacy is 25
+#define BUTTON_4 16 // Left most Button labeled "4" // Legacy is 18
+#define PGRM_BTN 4 // Button to activate Program mode // Legacy is 4
+#define PGRM_A 6 // Encoder Left // Legacy is 33
+#define PGRM_B 5 // Encoder Right // Legacy is 32
+#define BUZZER_PIN 1 // Make some noise // Legacy is 19
 
 #define FORMAT_SPIFFS_IF_FAILED true
 
