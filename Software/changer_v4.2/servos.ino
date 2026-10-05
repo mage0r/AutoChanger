@@ -88,6 +88,27 @@ void switchRods() {
 
 }
 
+// Mirrors switchRods() exactly, just stepping backward instead of forward - lowers the
+// current arm, steps servonum back one (wrapping to the end instead of the start), then
+// raises whatever arm is now current. Used by the web UI's Back button (see /back in
+// webserver.ino); the normal forward progression is still driven by the arm sensor via
+// operateArm(), this only ever runs on an explicit request to step back.
+void switchRodsBack() {
+
+  moveServo(patterns[currentPattern].steps[servonum-1] - '0', 0);
+
+  servonum --;
+
+  if (servonum < 1) {
+    if(DEBUG)
+      Serial.println(F("Wrapped to end"));
+    servonum = patterns[currentPattern].length;
+  }
+
+  moveServo(patterns[currentPattern].steps[servonum-1] - '0', 1);
+
+}
+
 void load_servos(fs::FS &fs, const char * path) {
   Serial.print(F("Loading Servos: "));
   Serial.print(path);

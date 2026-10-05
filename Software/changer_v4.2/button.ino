@@ -79,7 +79,7 @@ void checkButtons() {
   
 
   // This one iterates throught he menu pages.
-  // Cycles 0 (main) -> 1 (program) -> 2 (arm adjust) -> 3 (wifi) -> back to 0.
+  // Cycles 0 (main) -> 1 (program) -> 2 (arm adjust) -> 3 (wifi) -> 4 (i2c) -> back to 0.
   // held for two seconds
   if(pgrmState && pgrmDebouncer.duration() > 2000) {
     menu_page++;
@@ -91,7 +91,7 @@ void checkButtons() {
     if(menu_page == 2) {
       // entering the arm-adjust page - show the LOW position right away.
       syncArmServo();
-    } else if(menu_page == 4) {
+    } else if(menu_page == 5) {
       // wrap back round to the main page.
       for (int x = 0; x < 4; x++) {
         moveServo(x,0); // put all the arms back down - they may have been left up/mid-adjust on the arm-adjust page.
@@ -116,6 +116,8 @@ void checkButtons() {
     armAdjustMode();
   else if(menu_page == 3)
     wifiPageMode();
+  else if(menu_page == 4)
+    i2cPageMode();
 
  
 
@@ -179,6 +181,21 @@ void wifiPageMode() {
     save_config(SPIFFS, "/config.ini");
     if(DEBUG)
       Serial.println(F("WiFi toggled."));
+  }
+  pgrmExec = false;
+}
+
+void i2cPageMode() {
+  if(pgrmExec) {
+    i2c_enabled = !i2c_enabled;
+    if(i2c_enabled) {
+      setup_i2c_secondary();
+    } else {
+      teardown_i2c_secondary();
+    }
+    save_config(SPIFFS, "/config.ini");
+    if(DEBUG)
+      Serial.println(F("I2C toggled."));
   }
   pgrmExec = false;
 }

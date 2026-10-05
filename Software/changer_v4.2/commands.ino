@@ -2,8 +2,11 @@
  * Command interpreter.
  *
  * Transport-agnostic: processCommand() takes a single command line and dispatches it.
- * Serial is wired up today (readSerialCommands(), called from loop()); an I2C receive
- * handler can call processCommand() the same way later on.
+ * Two transports feed it, both from loop() (see the notes on cmdOut and i2c.ino for
+ * why it has to be loop() and not an interrupt/callback context):
+ *   - Serial:    readSerialCommands(), byte-stream framed on '\n'.
+ *   - Secondary
+ *     I2C bus:   readI2CCommands(), one command per I2C write transaction (see i2c.ino).
  *
  * Command format:   COMMAND ARGS\n
  * Response:         <the command you sent>:OK, or <the command you sent>:ERR <reason>
@@ -18,6 +21,21 @@
 
 String serialCommandBuffer = "";
 String currentCommandLine = ""; // the raw line currently being processed, for commandOK()/commandError()
+
+// Every cmd_*() function, and commandOK()/commandError(), write their response through
+// this instead of directly to Serial - that's what lets the exact same interpreter
+// serve two transports. It's pointed at &Serial normally; readI2CCommands() in i2c.ino
+// points it at a small in-RAM buffer for the duration of one command, so that command's
+// output lands there instead of going out over USB, then puts it back afterwards.
+Print *cmdOut = &Serial;
+
+// True for the duration of a command dispatched from the I2C side (see i2c.ino's
+// readI2CCommands()). Lets a command that genuinely can't work over that transport -
+// see cmd_put() - refuse cleanly instead of hanging. A plain bool, not Print-based
+// like cmdOut, because unlike output there's no generic way to redirect PUT's
+// multi-byte transfer onto a transport whose messages are single bounded
+// transactions - it has to be refused outright, not best-effort redirected.
+bool processingViaI2C = false;
 
 // State for an in-progress PUT (see cmd_put() and the top of readSerialCommands()).
 // Writes land in a .tmp file first and only replace the real file once every byte
@@ -39,6 +57,7 @@ const CommandHelp commandTable[] = {
   {"HELP", "Lists all available commands."},
   {"WIFI <ssid>,<password>", "Sets and saves the WiFi SSID/password, and reconnects immediately if WiFi is currently enabled."},
   {"WIFI_ENABLE ON|OFF", "Turns WiFi on or off and saves the setting."},
+  {"I2C_ENABLE ON|OFF", "Turns the secondary I2C bus on or off and saves the setting."},
   {"INFO", "Shows project/build info, IP, chip model/revision, flash size, sketch size/free space, RAM, PSRAM, and SPIFFS usage."},
   {"LS", "Lists files in SPIFFS with their sizes."},
   {"CAT <filename>", "Prints a file's contents."},
@@ -52,14 +71,14 @@ const byte commandTableSize = sizeof(commandTable) / sizeof(commandTable[0]);
 
 // Echoes the command that was sent, followed by :OK or :ERR <reason>.
 void commandOK() {
-  Serial.print(currentCommandLine);
-  Serial.println(F(":OK"));
+  cmdOut->print(currentCommandLine);
+  cmdOut->println(F(":OK"));
 }
 
 void commandError(const String &reason) {
-  Serial.print(currentCommandLine);
-  Serial.print(F(":ERR "));
-  Serial.println(reason);
+  cmdOut->print(currentCommandLine);
+  cmdOut->print(F(":ERR "));
+  cmdOut->println(reason);
 }
 
 // Call every loop() - reads whatever's arrived on Serial and dispatches complete lines,
@@ -114,6 +133,8 @@ void processCommand(String cmd) {
     cmd_setWifi(args);
   } else if(command == "WIFI_ENABLE") {
     cmd_wifiEnable(args);
+  } else if(command == "I2C_ENABLE") {
+    cmd_i2cEnable(args);
   } else if(command == "INFO") {
     cmd_info();
   } else if(command == "LS") {
@@ -137,9 +158,9 @@ void processCommand(String cmd) {
 
 void cmd_help() {
   for(byte i = 0; i < commandTableSize; i++) {
-    Serial.print(commandTable[i].syntax);
-    Serial.print(F(" - "));
-    Serial.println(commandTable[i].description);
+    cmdOut->print(commandTable[i].syntax);
+    cmdOut->print(F(" - "));
+    cmdOut->println(commandTable[i].description);
   }
   commandOK();
 }
@@ -193,61 +214,89 @@ void cmd_wifiEnable(String args) {
   commandOK();
 }
 
+void cmd_i2cEnable(String args) {
+  args.trim();
+  args.toUpperCase();
+
+  boolean turnOn;
+  if(args == "ON" || args == "1") {
+    turnOn = true;
+  } else if(args == "OFF" || args == "0") {
+    turnOn = false;
+  } else {
+    commandError(F("usage: I2C_ENABLE ON|OFF"));
+    return;
+  }
+
+  i2c_enabled = turnOn;
+  if(i2c_enabled) {
+    setup_i2c_secondary();
+  } else {
+    // If this command arrived over the bus it's about to turn off, the controller
+    // won't be able to read this response back - teardown stops the peripheral from
+    // answering at all, same as disabling WiFi over a WiFi-based connection would.
+    teardown_i2c_secondary();
+  }
+  save_config(SPIFFS, "/config.ini");
+
+  commandOK();
+}
+
 // INFO - same figures/formatting as the web manager's System Status table (see processor()
 // and convertFileSize() in webserver.ino), just laid out for a plain serial terminal.
 void cmd_info() {
-  Serial.print(F("Project: "));
-  Serial.print(PROJECT);
-  Serial.print(F(" - "));
-  Serial.println(VERSION);
+  cmdOut->print(F("Project: "));
+  cmdOut->print(PROJECT);
+  cmdOut->print(F(" - "));
+  cmdOut->println(VERSION);
 
-  Serial.print(F("Build: "));
-  Serial.print(__DATE__);
-  Serial.print(F(" "));
-  Serial.println(__TIME__);
+  cmdOut->print(F("Build: "));
+  cmdOut->print(__DATE__);
+  cmdOut->print(F(" "));
+  cmdOut->println(__TIME__);
 
-  Serial.print(F("IP: "));
+  cmdOut->print(F("IP: "));
   if(!wifi_enabled) {
-    Serial.println(F("off"));
+    cmdOut->println(F("off"));
   } else if(!wifi_connected) {
-    Serial.println(F("connecting..."));
+    cmdOut->println(F("connecting..."));
   } else if(WiFi.getMode() == WIFI_AP) {
-    Serial.println(WiFi.softAPIP());
+    cmdOut->println(WiFi.softAPIP());
   } else {
-    Serial.println(WiFi.localIP());
+    cmdOut->println(WiFi.localIP());
   }
 
-  Serial.print(F("Chip: "));
-  Serial.print(ESP.getChipModel());
-  Serial.print(F(" rev"));
-  Serial.println(ESP.getChipRevision());
+  cmdOut->print(F("Chip: "));
+  cmdOut->print(ESP.getChipModel());
+  cmdOut->print(F(" rev"));
+  cmdOut->println(ESP.getChipRevision());
 
-  Serial.print(F("Flash Size: "));
-  Serial.print(ESP.getFlashChipSize() / 1024 / 1024);
-  Serial.println(F(" MB"));
+  cmdOut->print(F("Flash Size: "));
+  cmdOut->print(ESP.getFlashChipSize() / 1024 / 1024);
+  cmdOut->println(F(" MB"));
 
-  Serial.print(F("Sketch Size: "));
-  Serial.print(ESP.getSketchSize() / 1024);
-  Serial.print(F(" KB, Free Sketch Space: "));
-  Serial.print(ESP.getFreeSketchSpace() / 1024);
-  Serial.println(F(" KB"));
+  cmdOut->print(F("Sketch Size: "));
+  cmdOut->print(ESP.getSketchSize() / 1024);
+  cmdOut->print(F(" KB, Free Sketch Space: "));
+  cmdOut->print(ESP.getFreeSketchSpace() / 1024);
+  cmdOut->println(F(" KB"));
 
-  Serial.print(F("RAM: "));
-  Serial.print(convertFileSize(ESP.getFreeHeap()));
-  Serial.print(F(" / "));
-  Serial.println(convertFileSize(ESP.getHeapSize()));
+  cmdOut->print(F("RAM: "));
+  cmdOut->print(convertFileSize(ESP.getFreeHeap()));
+  cmdOut->print(F(" / "));
+  cmdOut->println(convertFileSize(ESP.getHeapSize()));
 
-  Serial.print(F("PSRAM: "));
-  Serial.print(convertFileSize(ESP.getFreePsram()));
-  Serial.print(F(" / "));
-  Serial.println(convertFileSize(ESP.getPsramSize()));
+  cmdOut->print(F("PSRAM: "));
+  cmdOut->print(convertFileSize(ESP.getFreePsram()));
+  cmdOut->print(F(" / "));
+  cmdOut->println(convertFileSize(ESP.getPsramSize()));
 
-  Serial.print(F("SPIFFS: Total "));
-  Serial.print(convertFileSize(SPIFFS.totalBytes()));
-  Serial.print(F(", Used "));
-  Serial.print(convertFileSize(SPIFFS.usedBytes()));
-  Serial.print(F(", Free "));
-  Serial.println(convertFileSize(SPIFFS.totalBytes() - SPIFFS.usedBytes()));
+  cmdOut->print(F("SPIFFS: Total "));
+  cmdOut->print(convertFileSize(SPIFFS.totalBytes()));
+  cmdOut->print(F(", Used "));
+  cmdOut->print(convertFileSize(SPIFFS.usedBytes()));
+  cmdOut->print(F(", Free "));
+  cmdOut->println(convertFileSize(SPIFFS.totalBytes() - SPIFFS.usedBytes()));
 
   commandOK();
 }
@@ -257,9 +306,9 @@ void cmd_ls() {
   File root = SPIFFS.open("/");
   File file = root.openNextFile();
   while(file) {
-    Serial.print(file.name());
-    Serial.print(F("  "));
-    Serial.println(convertFileSize(file.size()));
+    cmdOut->print(file.name());
+    cmdOut->print(F("  "));
+    cmdOut->println(convertFileSize(file.size()));
     file = root.openNextFile();
   }
   commandOK();
@@ -267,6 +316,16 @@ void cmd_ls() {
 
 // PUT <filename> <size>
 void cmd_put(String args) {
+  // The raw bytes that follow a PUT command line are read by readSerialCommands()
+  // directly from the Serial stream (see putBytesRemaining there) - there's no
+  // equivalent for I2C, where a single write is one bounded transaction with no
+  // natural way to stream an arbitrary-length follow-up payload the same way.
+  // Refuse cleanly rather than setting up state nothing will ever complete.
+  if(processingViaI2C) {
+    commandError(F("PUT is not supported over I2C - use Serial"));
+    return;
+  }
+
   int spaceIndex = args.lastIndexOf(' ');
   if(spaceIndex == -1) {
     commandError(F("usage: PUT <filename> <size>"));
@@ -337,11 +396,11 @@ void cmd_cat(String args) {
   }
 
   while(file.available()) {
-    Serial.write(file.read());
+    cmdOut->write(file.read());
   }
   file.close();
 
-  Serial.println();
+  cmdOut->println();
   commandOK();
 }
 
@@ -390,7 +449,7 @@ void cmd_fix() {
 
   if(!SPIFFS.exists("/config.ini")) {
     save_config(SPIFFS, "/config.ini");
-    Serial.println(F("Restored /config.ini"));
+    cmdOut->println(F("Restored /config.ini"));
     restored++;
   }
 
@@ -400,13 +459,13 @@ void cmd_fix() {
     RestoreDefault(2);
     RestoreDefault(3);
     save_patterns(SPIFFS, "/patterns.txt");
-    Serial.println(F("Restored /patterns.txt"));
+    cmdOut->println(F("Restored /patterns.txt"));
     restored++;
   }
 
   if(!SPIFFS.exists("/servos.txt")) {
     default_servos(); // sets defaults, moves arms to eject, and saves
-    Serial.println(F("Restored /servos.txt"));
+    cmdOut->println(F("Restored /servos.txt"));
     restored++;
   }
 
@@ -416,15 +475,15 @@ void cmd_fix() {
                                edit_html, failed_html, wifi_join_html, wifi_joining_html};
   for(byte i = 0; i < sizeof(htmlPath) / sizeof(htmlPath[0]); i++) {
     if(!SPIFFS.exists(htmlPath[i])) {
-      Serial.print(F("Restored "));
-      Serial.println(htmlPath[i]);
+      cmdOut->print(F("Restored "));
+      cmdOut->println(htmlPath[i]);
       restored++;
     }
     save_html(SPIFFS, htmlPath[i], htmlContent[i]); // no-op if it already exists
   }
 
   if(restored == 0) {
-    Serial.println(F("Nothing missing."));
+    cmdOut->println(F("Nothing missing."));
   }
 
   commandOK();

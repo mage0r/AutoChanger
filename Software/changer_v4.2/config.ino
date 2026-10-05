@@ -22,6 +22,8 @@ void setup_config() {
   test_run = 10;
 
   wifi_enabled = true;
+  i2c_enabled = false;
+  i2c2_address = I2C2_ADDRESS_DEFAULT;
 
 }
 
@@ -114,6 +116,15 @@ void assign_config(String name, String value) {
     test_run = value.toInt();
   } else if(name == "wifi_enabled") {
     wifi_enabled = value.toInt();
+  } else if(name == "i2c_enabled") {
+    i2c_enabled = value.toInt();
+  } else if(name == "i2c2_address") {
+    // 0x00-0x07 and 0x78-0x7F are reserved in the 7-bit I2C address space - ignore
+    // anything in those ranges (or unparseable) and keep whatever was already set
+    // rather than letting a bad config.ini value take the bus down silently.
+    int parsed = value.toInt();
+    if(parsed >= 0x08 && parsed <= 0x77)
+      i2c2_address = parsed;
   } else if(name == "debounceDelay") {
     debounceDelay = value.toInt();
   }
@@ -139,6 +150,8 @@ void save_config(fs::FS &fs, const char * path) {
   temp_message += "jquery="+jquery+"\n";
   temp_message += "test_run="+(String)test_run+"\n";
   temp_message += "wifi_enabled="+(String)wifi_enabled+"\n";
+  temp_message += "i2c_enabled="+(String)i2c_enabled+"\n";
+  temp_message += "i2c2_address="+(String)i2c2_address+"\n";
   temp_message += "debounceDelay="+(String)debounceDelay+"\n";
 
   file.print(temp_message);

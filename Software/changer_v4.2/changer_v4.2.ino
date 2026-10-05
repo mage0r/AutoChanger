@@ -12,7 +12,6 @@
  * The TinyPICO's are a bit pricey and getting hard to get.
  *  
  *  Oh god, please don't keep reading this code.  It is awful.
- *  Claude has assisted me heavily since v3.9.  It has not made anything any easier to read.
  *  
  *
  ****************************************************/
@@ -42,17 +41,27 @@ boolean BUZZER = 1; // Is the buzzer on or off. used to be a define, now a bool.
 
 // Set our version number.  Don't forget to update when featureset changes
 #define PROJECT "AutoChanger"
-#define VERSION "V.4.2.3"
+#define VERSION "V.4.2.5"
 
-#define ARM 10 // Sensor pin indicating when the carriage has cleared the unit // Legacy is 23
-#define BUTTON_1 13 // Right most Button labeled "1" // Legacy is 27
-#define BUTTON_2 14 // Center Right most Button labeled "2" // Legacy is 26
-#define BUTTON_3 15 // Center left most Button labeled "3" // Legacy is 25
-#define BUTTON_4 16 // Left most Button labeled "4" // Legacy is 18
-#define PGRM_BTN 4 // Button to activate Program mode // Legacy is 4
-#define PGRM_A 6 // Encoder Left // Legacy is 33
-#define PGRM_B 5 // Encoder Right // Legacy is 32
-#define BUZZER_PIN 1 // Make some noise // Legacy is 19
+#define ARM 10
+#define BUTTON_1 13
+#define BUTTON_2 14
+#define BUTTON_3 15
+#define BUTTON_4 16
+#define PGRM_BTN 4
+#define PGRM_A 6
+#define PGRM_B 5
+#define BUZZER_PIN 1
+
+// Secondary I2C bus (see i2c.ino) - this device acts as the I2C peripheral, reusing
+// the same command interpreter as Serial.
+#define I2C2_SDA 2
+#define I2C2_SCL 7
+#define I2C2_ADDRESS_DEFAULT 0x42 // used if i2c2_address in config.ini is missing or out of range
+#define I2C2_RESPONSE_MAX 120 // stay comfortably under the ~126 usable bytes of Wire's 128-byte buffer
+
+boolean i2c_enabled = false; // persisted in config.ini - see I2C_ENABLE in commands.ino
+uint8_t i2c2_address = I2C2_ADDRESS_DEFAULT; // persisted in config.ini - 7-bit address, 0x08-0x77
 
 #define FORMAT_SPIFFS_IF_FAILED true
 
@@ -187,6 +196,9 @@ void setup() {
   // reset all the servo positions.
   setup_servos();
 
+  if(i2c_enabled)
+    setup_i2c_secondary();
+
   delay(2000);
   
   if(DEBUG)
@@ -202,6 +214,7 @@ void loop() {
   }
 
   readSerialCommands();
+  readI2CCommands();
 
   // armTrigger is set by an interrupt.
   if(armTrigger) {

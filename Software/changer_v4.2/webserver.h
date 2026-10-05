@@ -140,10 +140,20 @@ const char failed_html[] PROGMEM = R"rawliteral(
 
 const char autochanger_svg[] PROGMEM = R"rawliteral(<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1283.081787 521.068726 166.163574 157.862610">
 <style>
-.arm-shape{fill:#ccc;stroke:#999;stroke-width:0.3;transition:fill .15s,stroke .15s;pointer-events:none}
+.arm-shape{fill:#ccc;stroke:#999;stroke-width:0.3;transition:fill .5s,stroke .5s,transform .5s;pointer-events:none}
 .arm-shape.active{fill:#4CAF50;stroke:#2e7031}
-.btn-hit{fill:#ddd;stroke:#0000ff;stroke-width:0.3;fill-opacity:0.35;cursor:pointer;transition:fill .15s,stroke .15s}
-.btn-hit:hover{fill-opacity:0.6}
+/* Each arm keeps its own matrix(a,b,c,d,e,f) here (same a-e as its transform attribute -
+   CSS transform replaces the attribute entirely rather than combining with it, so the
+   full matrix has to be restated, not just the vertical offset) with f shifted by -11 to
+   lift it when active - matching the real raised position from the original DXF-derived
+   source art (arm0 there sits at matrix(-1,0,0,1,59,-10.999939) vs ~0 at rest), not an
+   arbitrary guess. Matching each arm's own id, not a shared rule, since e differs per
+   arm (horizontal position) and has to stay intact. */
+#arm0.active{transform:matrix(-1,0,0,1,59,-11)}
+#arm1.active{transform:matrix(-1,0,0,1,39,-11)}
+#arm2.active{transform:matrix(-1,0,0,1,19,-11)}
+#arm3.active{transform:matrix(-1,0,0,1,-1,-11)}
+.btn-hit{fill:#ddd;stroke:#0000ff;stroke-width:0.3;fill-opacity:0.35;transition:fill .5s,stroke .5s}
 .btn-hit.active{fill:#4CAF50;fill-opacity:0.8;stroke:#2e7031}
 .btn-label{font-family:Arial,sans-serif;font-weight:bold;font-size:11px;fill:#333;text-anchor:middle;pointer-events:none}
 </style>
@@ -169,14 +179,14 @@ const char autochanger_svg[] PROGMEM = R"rawliteral(<svg xmlns="http://www.w3.or
 <path id="arm1" class="arm-shape" transform="matrix(-1,0,0,1,39,0)"  d="M1230.445801,567.109741L1230.491333,636.529968L1236.253296,636.529968L1236.275513,632.615356L1236.275146,632.614746L1236.275391,627.473328L1236.275513,627.473328L1236.275513,625.075562L1236.275391,625.075562L1236.275391,619.933533L1236.275513,619.933533L1236.275513,617.535706L1236.275391,619.933533L1236.275391,617.535706L1236.275513,612.393677L1236.253296,578.566772L1246.535889,566.03064L1246.708252,565.833984L1246.853638,565.616455L1246.96936,565.381775L1247.053467,565.134094L1247.121582,564.616455L1247.121582,551.469971L1247.053467,550.952332L1246.96936,550.70459L1246.853638,550.469971L1246.708252,550.252441L1246.535889,550.055725L1246.339111,549.88324L1246.121582,549.737915L1245.886963,549.622192L1245.63916,549.538086L1245.121582,549.469971L1230.297363,549.469971L1229.901489,549.670959L1229.553467,549.946655L1229.267212,550.286072L1229.054199,550.675598L1228.922852,551.099792L1228.878418,551.541565L1228.922852,551.983337L1229.054199,552.407471L1229.267212,552.797058L1229.553467,553.136475L1229.901489,553.41217L1230.297363,553.613159L1236.121582,555.869934L1238.121582,554.469971L1242.621582,554.469971L1243.009766,554.521057L1243.371582,554.670898L1243.682251,554.909302L1243.920654,555.219971L1244.070557,555.581726L1244.121582,555.969971L1244.070557,556.358154L1243.920654,556.719971L1243.682251,557.03064L1243.371582,557.268982L1243.009766,557.418823L1242.621582,557.469971L1240.703979,557.469971L1239.965088,557.547607L1239.258545,557.777283L1238.820801,558.010132L1238.419678,558.301636L1238.062988,558.646118L1230.445801,567.109741z"/>
 <path id="arm2" class="arm-shape" transform="matrix(-1,0,0,1,19,0.000061)"  d="M1230.445801,567.109741L1230.491333,636.529968L1236.253296,636.529968L1236.275513,632.615356L1236.275146,632.614746L1236.275391,627.473328L1236.275513,627.473328L1236.275513,625.075562L1236.275391,625.075562L1236.275391,619.933533L1236.275513,619.933533L1236.275513,617.535706L1236.275391,619.933533L1236.275391,617.535706L1236.275513,612.393677L1236.253296,578.566772L1246.535889,566.03064L1246.708252,565.833984L1246.853638,565.616455L1246.96936,565.381775L1247.053467,565.134094L1247.121582,564.616455L1247.121582,551.469971L1247.053467,550.952332L1246.96936,550.70459L1246.853638,550.469971L1246.708252,550.252441L1246.535889,550.055725L1246.339111,549.88324L1246.121582,549.737915L1245.886963,549.622192L1245.63916,549.538086L1245.121582,549.469971L1230.297363,549.469971L1229.901489,549.670959L1229.553467,549.946655L1229.267212,550.286072L1229.054199,550.675598L1228.922852,551.099792L1228.878418,551.541565L1228.922852,551.983337L1229.054199,552.407471L1229.267212,552.797058L1229.553467,553.136475L1229.901489,553.41217L1230.297363,553.613159L1236.121582,555.869934L1238.121582,554.469971L1242.621582,554.469971L1243.009766,554.521057L1243.371582,554.670898L1243.682251,554.909302L1243.920654,555.219971L1244.070557,555.581726L1244.121582,555.969971L1244.070557,556.358154L1243.920654,556.719971L1243.682251,557.03064L1243.371582,557.268982L1243.009766,557.418823L1242.621582,557.469971L1240.703979,557.469971L1239.965088,557.547607L1239.258545,557.777283L1238.820801,558.010132L1238.419678,558.301636L1238.062988,558.646118L1230.445801,567.109741z"/>
 <path id="arm3" class="arm-shape" transform="matrix(-1,0,0,1,-1,0)"  d="M1230.445801,567.109741L1230.491333,636.529968L1236.253296,636.529968L1236.275513,632.615356L1236.275146,632.614746L1236.275391,627.473328L1236.275513,627.473328L1236.275513,625.075562L1236.275391,625.075562L1236.275391,619.933533L1236.275513,619.933533L1236.275513,617.535706L1236.275391,619.933533L1236.275391,617.535706L1236.275513,612.393677L1236.253296,578.566772L1246.535889,566.03064L1246.708252,565.833984L1246.853638,565.616455L1246.96936,565.381775L1247.053467,565.134094L1247.121582,564.616455L1247.121582,551.469971L1247.053467,550.952332L1246.96936,550.70459L1246.853638,550.469971L1246.708252,550.252441L1246.535889,550.055725L1246.339111,549.88324L1246.121582,549.737915L1245.886963,549.622192L1245.63916,549.538086L1245.121582,549.469971L1230.297363,549.469971L1229.901489,549.670959L1229.553467,549.946655L1229.267212,550.286072L1229.054199,550.675598L1228.922852,551.099792L1228.878418,551.541565L1228.922852,551.983337L1229.054199,552.407471L1229.267212,552.797058L1229.553467,553.136475L1229.901489,553.41217L1230.297363,553.613159L1236.121582,555.869934L1238.121582,554.469971L1242.621582,554.469971L1243.009766,554.521057L1243.371582,554.670898L1243.682251,554.909302L1243.920654,555.219971L1244.070557,555.581726L1244.121582,555.969971L1244.070557,556.358154L1243.920654,556.719971L1243.682251,557.03064L1243.371582,557.268982L1243.009766,557.418823L1242.621582,557.469971L1240.703979,557.469971L1239.965088,557.547607L1239.258545,557.777283L1238.820801,558.010132L1238.419678,558.301636L1238.062988,558.646118L1230.445801,567.109741z"/></g>
-<g><circle id="btn0" class="btn-hit" cx="-1183.081787" cy="658.431335" r="9"/>
-<text class="btn-label" x="-1183.081787" y="645.431335">1</text>
-<circle id="btn1" class="btn-hit" cx="-1203.081787" cy="658.431335" r="9"/>
-<text class="btn-label" x="-1203.081787" y="645.431335">2</text>
-<circle id="btn2" class="btn-hit" cx="-1223.081787" cy="658.431335" r="9"/>
-<text class="btn-label" x="-1223.081787" y="645.431335">3</text>
-<circle id="btn3" class="btn-hit" cx="-1243.0" cy="658.431335" r="9"/>
-<text class="btn-label" x="-1243.0" y="645.431335">4</text></g>
+<g><circle id="btn0" class="btn-hit" cx="-1183.081787" cy="658.431335" r="6"/>
+<text class="btn-label" x="-1183.081787" y="673.431335">1</text>
+<circle id="btn1" class="btn-hit" cx="-1203.081787" cy="658.431335" r="6"/>
+<text class="btn-label" x="-1203.081787" y="673.431335">2</text>
+<circle id="btn2" class="btn-hit" cx="-1223.081787" cy="658.431335" r="6"/>
+<text class="btn-label" x="-1223.081787" y="673.431335">3</text>
+<circle id="btn3" class="btn-hit" cx="-1243.0" cy="658.431335" r="6"/>
+<text class="btn-label" x="-1243.0" y="673.431335">4</text></g>
 </svg>)rawliteral";
 
 // Shown as the default page only while the unit is running as its own access point
@@ -192,16 +202,22 @@ const char wifi_join_html[] PROGMEM = R"rawliteral(
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 body{background:#f7f7f7;font-family:Arial,sans-serif;padding:20px}
+.tagline{font-weight:normal;font-style:italic;font-size:14px;color:#888;margin-left:6px}
 fieldset{width:280px;background:#f7f7f7;margin:10px 0}
-input[type=text],input[type=password]{width:100%;padding:8px;margin:6px 0;
+input[type=text],input[type=password],select{width:100%;padding:8px;margin:6px 0;
 border:1px solid #ccc;border-radius:4px;box-sizing:border-box}
 label{font-size:14px;color:#444}
 .btn{width:100%;padding:10px;margin-top:10px}
 .note{color:#666;font-size:13px;max-width:320px}
+.hidden{display:none}
 </style></head><body>
-<h2>AutoChanger</h2>
-<p>This unit isn't connected to a WiFi network - you're currently connected to its own hotspot.</p>
+<h2>AutoChanger <span class="tagline">by HeartOfPluto</span></h2>
 <fieldset><legend>Join a WiFi network</legend>
+<button type="button" class="btn" id="scanBtn" onclick="startScan()">Scan for networks</button>
+<p class="note" id="scanStatus"></p>
+<select id="networks" class="hidden" onchange="pickNetwork()">
+<option value="">Select a network...</option>
+</select>
 <form method="POST" action="/join">
 <label for="ssid">Network name (SSID)</label>
 <input type="text" id="ssid" name="ssid" required autofocus
@@ -212,6 +228,63 @@ autocapitalize="off" autocorrect="off" spellcheck="false">
 </form>
 </fieldset>
 <p class="note">If it can't connect within 30 seconds, this hotspot comes back so you can try again.</p>
+<p><a href="/index.html">Back to index</a></p>
+<script>
+var scanPolls = 0;
+function startScan() {
+  document.getElementById('scanBtn').disabled = true;
+  document.getElementById('networks').classList.add('hidden');
+  scanPolls = 0;
+  setScanStatus('Scanning...');
+  pollScan();
+}
+function pollScan() {
+  scanPolls++;
+  if (scanPolls > 20) { // ~20s of polling - something's wrong, don't wait forever
+    setScanStatus('Scan timed out - try again, or enter the network manually below.');
+    document.getElementById('scanBtn').disabled = false;
+    return;
+  }
+  fetch('/scan').then(function(r) { return r.json(); }).then(function(data) {
+    if (data.status === 'done') {
+      showNetworks(data.networks);
+    } else {
+      setTimeout(pollScan, 1000);
+    }
+  }).catch(function() {
+    setScanStatus('Scan failed - try again, or enter the network manually below.');
+    document.getElementById('scanBtn').disabled = false;
+  });
+}
+function showNetworks(networks) {
+  document.getElementById('scanBtn').disabled = false;
+  var select = document.getElementById('networks');
+  select.innerHTML = '<option value="">Select a network...</option>';
+  if (!networks.length) {
+    setScanStatus('No networks found - try again, or enter the network manually below.');
+    return;
+  }
+  setScanStatus('Found ' + networks.length + ' network' + (networks.length === 1 ? '' : 's') + ':');
+  networks.forEach(function(n) {
+    var opt = document.createElement('option');
+    opt.value = n.ssid;
+    var pct = Math.max(0, Math.min(100, 2 * (n.rssi + 100)));
+    opt.textContent = n.ssid + ' \u2014 ' + pct + '%' + (n.secure ? ' (secured)' : '');
+    select.appendChild(opt);
+  });
+  select.classList.remove('hidden');
+}
+function pickNetwork() {
+  var select = document.getElementById('networks');
+  if (select.value) {
+    document.getElementById('ssid').value = select.value;
+    document.getElementById('password').focus();
+  }
+}
+function setScanStatus(text) {
+  document.getElementById('scanStatus').textContent = text;
+}
+</script>
 </body></html>)rawliteral";
 
 const char wifi_joining_html[] PROGMEM = R"rawliteral(
@@ -230,12 +303,21 @@ const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head><title>AutoChanger</title>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-body{background:#f7f7f7;font-family:Arial,sans-serif;padding:20px}
+body{background:#f7f7f7;font-family:Arial,sans-serif;padding:6px 20px 20px}
+h2{margin:0 0 6px}
 table{background:#ddd;border-collapse:collapse;width:650px}
 td,th{border:1px solid #ddd;text-align:left;padding:8px}
 tr:nth-child(even){background:#fff}
 fieldset{width:700px;background:#f7f7f7;margin:10px 0}
-#armsContainer{width:380px;padding:20px 0}
+#armsContainer{width:380px;padding:4px 0 16px}
+.sequence-row{width:380px;display:flex;align-items:center;justify-content:space-between;margin:0 0 14px}
+.back-btn{padding:6px 14px;cursor:pointer}
+.sequence-position{text-align:center}
+.seq-digit{display:inline-block;margin:0 3px;font-weight:bold;color:#333}
+.seq-digit.d0{font-size:28px;color:#2e7031}
+.seq-digit.d1{font-size:22px;opacity:0.7}
+.seq-digit.d2{font-size:17px;opacity:0.5}
+.seq-digit.d3{font-size:13px;opacity:0.35}
 .pattern-list{width:500px;margin:10px 0}
 .pattern-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:4px}
 .pattern-row.active{background:#e6ffed}
@@ -247,11 +329,14 @@ fieldset{width:700px;background:#f7f7f7;margin:10px 0}
 .tagline{font-weight:normal;font-style:italic;font-size:14px;color:#888;margin-left:6px}
 </style>
 <script>
-function press(n){
-  fetch('/press?arm='+n);
-}
 function switchPattern(n){
   fetch('/switch?pattern='+n).then(refreshStatus);
+}
+function stepBack(){
+  fetch('/back').then(refreshStatus);
+}
+function stepNext(){
+  fetch('/next').then(refreshStatus);
 }
 function toggleEdit(n){
   var field = document.getElementById('pfield'+n);
@@ -268,8 +353,32 @@ function toggleEdit(n){
     });
   }
 }
+function wrapIndex(n, length) {
+  // True (always non-negative) modulo, deliberately written without using the mod
+  // operator's symbol: this file is served through the template processor (see
+  // processor() in webserver.ino), which scans for a second occurrence of that same
+  // symbol to pair with any one it finds, and mangles everything in between - using
+  // it here is exactly the failure the warning on that function's fallback describes.
+  return n - length * Math.floor(n / length);
+}
+function buildSequenceWindow(patternStr, step, length) {
+  // Mirrors the unit's own main_display()/build_temp_pattern(): 3 steps before the
+  // current one, the current one, then 3 after - wrapping cyclically around the
+  // pattern, same as the physical sequence loops. Distance from center (0-3) picks
+  // the digit's size via the d0-d3 CSS classes, center largest.
+  var parts = [];
+  for (var offset = -3; offset <= 3; offset++) {
+    var idx = wrapIndex(step - 1 + offset, length);
+    var dist = Math.abs(offset);
+    parts.push('<span class="seq-digit d' + dist + '">' + patternStr[idx] + '</span>');
+  }
+  return parts.join('');
+}
 function refreshStatus(){
   fetch('/status').then(function(r){return r.json();}).then(function(s){
+    document.getElementById('sequenceRow').classList.toggle('hidden', !s.length);
+    var pos = document.getElementById('sequencePosition');
+    pos.innerHTML = s.length ? buildSequenceWindow(s.patterns[s.pattern], s.step, s.length) : '';
     for(var i=0;i<4;i++){
       var arm = document.getElementById('arm'+i);
       var btn = document.getElementById('btn'+i);
@@ -285,18 +394,17 @@ function refreshStatus(){
 }
 fetch('/autochanger.svg').then(function(r){return r.text();}).then(function(svg){
   document.getElementById('armsContainer').innerHTML = svg;
-  for(var i=0;i<4;i++){
-    (function(n){
-      var btn = document.getElementById('btn'+n);
-      if(btn) btn.addEventListener('click', function(){ press(n); });
-    })(i);
-  }
   refreshStatus();
 });
 setInterval(refreshStatus, 1000);
 </script></head><body>
 <h2>AutoChanger <span class="tagline">by HeartOfPluto</span></h2>
 <div id="armsContainer"></div>
+<div class="sequence-row hidden" id="sequenceRow">
+<button class="back-btn" id="backBtn" onclick="stepBack()">BACK</button>
+<span class="sequence-position" id="sequencePosition"></span>
+<button class="back-btn" id="nextBtn" onclick="stepNext()">NEXT</button>
+</div>
 <div class="pattern-list">
 <div class="pattern-row" id="prow0">
 <span class="pattern-label" id="plabel0" onclick="switchPattern(0)">Pattern 1:</span>
@@ -319,7 +427,7 @@ setInterval(refreshStatus, 1000);
 <button class="pattern-btn" id="pbtn3" onclick="toggleEdit(3)">Edit</button>
 </div>
 </div>
-<p><a href="/manage">Manage files</a> &middot; <a href="https://github.com/mage0r/AutoChanger">GitHub</a></p>
+<p><a href="/manage">Manage files</a> &middot; <a href="/join.html">WiFi Setup</a> &middot; <a href="https://github.com/mage0r/AutoChanger">GitHub</a></p>
 <fieldset><legend>System Status</legend>
 <table><tr><th>SPIFFS</th><th>ESP32 Status</th></tr><tr>
 <td>Total: %SPIFFS_TOTAL_BYTES%<br>Used: %SPIFFS_USED_BYTES%<br>Free: %SPIFFS_FREE_BYTES%</td>

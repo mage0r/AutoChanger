@@ -251,6 +251,22 @@ void wifi_display() {
   }
 }
 
+void i2c_display() {
+  u8g2.setFont(u8g2_font_fub11_tr);
+
+  u8g2.setCursor(10, 14);
+  u8g2.print("I2C: ");
+  u8g2.print(i2c_enabled ? "<ON>" : "<OFF>");
+
+  if(i2c_enabled) {
+    u8g2.setCursor(10, 30);
+    u8g2.print("Addr: 0x");
+    if(i2c2_address < 0x10)
+      u8g2.print("0"); // zero-pad a single hex digit, e.g. "0x08" not "0x8"
+    u8g2.print(i2c2_address, HEX);
+  }
+}
+
 // All the displays
 // terrible Idea.  I regret it already.
 void display_page() {
@@ -275,13 +291,16 @@ void display_page() {
       } else if( menu_page == 3 ) {
         // Enable/disable WiFi and show the current IP address.
         wifi_display();
+      } else if( menu_page == 4 ) {
+        // Enable/disable the secondary I2C bus and show its configured address.
+        i2c_display();
       }
       /*
-       * else if( menu_page == 4 ) {
+       * else if( menu_page == 5 ) {
         // basic options.
         // disable the buzzer, disable errors.
         
-      } else if( menu_page == 5 ) {
+      } else if( menu_page == 6 ) {
         // Update
         // check if new version is 
         
