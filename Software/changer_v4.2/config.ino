@@ -3,7 +3,7 @@ void setup_config() {
   // if the file doesn't exist, load defaults.
   // There's no reason not to add your own options.
 
-  Serial.println(F("Loading Defaults"));
+  weblog.println(F("Loading Defaults"));
 
   // Set all our defaults.
   // if we have a config file these will immediately be overridden.
@@ -28,13 +28,13 @@ void setup_config() {
 }
 
 void load_config(fs::FS &fs, const char * path) {
-  Serial.print(F("Loading Config: "));
-  Serial.print(path);
+  weblog.print(F("Loading Config: "));
+  weblog.print(path);
 
   File file = fs.open(path);
   if(!file || file.isDirectory()){
-      Serial.println(F("- failed to open file for reading"));
-      Serial.println(F("Creating Default Configuration."));
+      weblog.println(F("- failed to open file for reading"));
+      weblog.println(F("Creating Default Configuration."));
       save_config(SPIFFS, path);
       save_html(SPIFFS, "/index.html", index_html);
       save_html(SPIFFS, "/autochanger.svg", autochanger_svg);
@@ -46,7 +46,7 @@ void load_config(fs::FS &fs, const char * path) {
       save_html(SPIFFS, "/joining.html", wifi_joining_html);
       return;
   } else {
-    Serial.println(F(" - Success!"));
+    weblog.println(F(" - Success!"));
   }
 
   byte counter1 = 0;
@@ -85,10 +85,10 @@ void load_config(fs::FS &fs, const char * path) {
 
   file.close();
 
-  Serial.println(F("Config Load Complete."));
+  weblog.println(F("Config Load Complete."));
 
   if(save) {
-    Serial.println(F("Updating Wifi Password."));
+    weblog.println(F("Updating Wifi Password."));
     save_config(SPIFFS, path);
     save = false;
   }
@@ -97,8 +97,8 @@ void load_config(fs::FS &fs, const char * path) {
 void assign_config(String name, String value) {
   // Just a pity we can't automatically do this.
 
-  Serial.print(F("Updating "));
-  Serial.println(name);
+  weblog.print(F("Updating "));
+  weblog.println(name);
 
   if(name == "ssid") {
     ssid = value;
@@ -137,7 +137,7 @@ void save_config(fs::FS &fs, const char * path) {
   //fs.remove(path);
   File file = fs.open(path, FILE_WRITE);
   if(!file){
-      Serial.println(F("Write failed"));
+      weblog.println(F("Write failed"));
       return;
   }
   
@@ -164,9 +164,9 @@ void save_html(fs::FS &fs, const char *path, const char *html) {
   File file = fs.open(path);
   if(!file  || file.isDirectory()) {
     file.close();
-    Serial.print("Default ");
-    Serial.print(path);
-    Serial.println(" does not exist, creating.");
+    weblog.print("Default ");
+    weblog.print(path);
+    weblog.println(" does not exist, creating.");
     file = fs.open(path, FILE_WRITE);
     file.print(html);
   }

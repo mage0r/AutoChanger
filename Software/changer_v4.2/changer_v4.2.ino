@@ -9,9 +9,11 @@
  *  sure I didn't miss any event triggers from the sensor.  Generally, the Nano only having two interrupt pins
  *  didn't help.
  *
- * The TinyPICO's are a bit pricey and getting hard to get.
+ *  The TinyPICO's are a bit pricey and getting hard to get.
  *  
  *  Oh god, please don't keep reading this code.  It is awful.
+ *  It was awful when I wrote it, Claude has implemented a lot of features for me and has not made it any easier to read.
+ *  Probably fair to say it's Claudes more than mine now really.
  *  
  *
  ****************************************************/
@@ -33,15 +35,82 @@
 // button.h contains the button-debounce state globals.
 #include "button.h"
 
-byte DEBUG = 1; // Do we want debug output on serial.
-// 0 is off.
-// 1 is default logs.
+// A fixed-size ring buffer that tees everything written to it out to the real
+// Serial (so the USB monitor keeps working exactly as before) and also keeps the
+// most recent bytes in RAM, so the web UI's Serial Log tab can show them too. This
+// is the main sketch file specifically so every other file can see the global
+// instance below - per Arduino's own build docs, this file (matching the sketch
+// folder's name) is always concatenated first, so a global declared here is the
+// only kind guaranteed visible everywhere else, regardless of those other files'
+// alphabetical order.
+#define LOG_BUFFER_SIZE 4096
+
+byte DEBUG = 1; // 0 = off, 1 = normal (if(DEBUG) throughout this codebase - fires for
+                 // any non-zero value, including 2), 2 = also prefixes every line
+                 // weblog prints with a millis() timestamp (see LogBuffer::write()
+                 // just below) - for digging into timing-sensitive issues, where
+                 // WHEN each of the existing log lines happened matters, not just
+                 // their order. Nothing has to be added anywhere to use this - every
+                 // weblog.print()/println() call already in the codebase gets
+                 // timestamped automatically once this is 2.
+
+class LogBuffer : public Print {
+  public:
+    size_t write(uint8_t c) override {
+      // Stamps the START of each line, not every byte - checked here so it applies
+      // to every existing call site for free, rather than needing every single
+      // weblog.print() throughout the codebase to be changed individually.
+      if(DEBUG >= 2 && atLineStart) {
+        String prefix = String(millis()) + ": ";
+        for(size_t i = 0; i < prefix.length(); i++)
+          writeRaw((uint8_t)prefix[i]);
+        atLineStart = false;
+      }
+      writeRaw(c);
+      if(c == '\n')
+        atLineStart = true;
+      return 1;
+    }
+    size_t write(const uint8_t *data, size_t size) override {
+      for(size_t i = 0; i < size; i++)
+        write(data[i]);
+      return size;
+    }
+    // Oldest-to-newest, exactly as Serial would have shown it.
+    String getContents() {
+      String result;
+      result.reserve(filled);
+      size_t start = (filled < LOG_BUFFER_SIZE) ? 0 : head;
+      for(size_t i = 0; i < filled; i++) {
+        result += (char)buf[(start + i) % LOG_BUFFER_SIZE];
+      }
+      return result;
+    }
+    void clear() {
+      head = 0;
+      filled = 0;
+    }
+  private:
+    void writeRaw(uint8_t c) {
+      Serial.write(c);
+      buf[head] = c;
+      head = (head + 1) % LOG_BUFFER_SIZE;
+      if(filled < LOG_BUFFER_SIZE)
+        filled++;
+    }
+    uint8_t buf[LOG_BUFFER_SIZE];
+    size_t head = 0;
+    size_t filled = 0;
+    bool atLineStart = true;
+};
+
+LogBuffer weblog;
 // 2 shows timing information.
 boolean BUZZER = 1; // Is the buzzer on or off. used to be a define, now a bool.
 
 // Set our version number.  Don't forget to update when featureset changes
 #define PROJECT "AutoChanger"
-#define VERSION "V.4.2.5"
+#define VERSION "V.4.2.8"
 
 #define ARM 10
 #define BUTTON_1 13
@@ -69,6 +138,18 @@ uint8_t i2c2_address = I2C2_ADDRESS_DEFAULT; // persisted in config.ini - 7-bit 
 // content for this array is loaded from eeprom
 // closed, open, eject
 int servos[4][3];
+
+// A servo test is requested here (see /servo_test in webserver.ino) and actually run
+// from loop() (see below), never from the web handler itself. ESPAsyncWebServer
+// handlers run on the async_tcp task - testCycleArm()'s delay(400) calls, run
+// directly in a handler, block that task long enough to trip the ESP32's task
+// watchdog and crash the device (confirmed from an actual crash log: "async_tcp"
+// named as the task that failed to check in, "loopTask" still listed as running
+// fine). loop() already blocks for the same duration when the OLED's own TEST
+// button runs this, without issue, so running it from there instead avoids the
+// problem rather than working around it.
+volatile bool servoTestPending = false;
+int servoTestArm = -1;
 boolean servosDefaulted = false; // set true by default_servos() when /servos.txt wasn't found
 
 unsigned long servoTimeout = 0;
@@ -125,30 +206,30 @@ void setup() {
   Serial.begin(115200);
 
   // First, build information
-  Serial.print(F(PROJECT));
-  Serial.print(F(" "));
-  Serial.println(F(VERSION));
-  Serial.print(F("Build Date: "));
-  Serial.println(F(__DATE__ " " __TIME__));
-  Serial.print(F("Free Ram: "));
-  Serial.print(ESP.getFreeHeap() / 1024);
-  Serial.println(F(" KB"));
+  weblog.print(F(PROJECT));
+  weblog.print(F(" "));
+  weblog.println(F(VERSION));
+  weblog.print(F("Build Date: "));
+  weblog.println(F(__DATE__ " " __TIME__));
+  weblog.print(F("Free Ram: "));
+  weblog.print(ESP.getFreeHeap() / 1024);
+  weblog.println(F(" KB"));
 
   // Chip/flash identity - compare "Flash Size" against whatever the Arduino IDE's
   // Tools > Flash Size is set to. A mismatch there (not in this code) is the usual
   // cause of a wrong/too-small SPIFFS partition.
-  Serial.print(F("Chip Model: "));
-  Serial.print(ESP.getChipModel());
-  Serial.print(F(" rev"));
-  Serial.println(ESP.getChipRevision());
-  Serial.print(F("Flash Size: "));
-  Serial.print(ESP.getFlashChipSize() / 1024 / 1024);
-  Serial.println(F(" MB"));
-  Serial.print(F("Sketch Size: "));
-  Serial.print(ESP.getSketchSize() / 1024);
-  Serial.print(F(" KB, Free Sketch Space: "));
-  Serial.print(ESP.getFreeSketchSpace() / 1024);
-  Serial.println(F(" KB"));
+  weblog.print(F("Chip Model: "));
+  weblog.print(ESP.getChipModel());
+  weblog.print(F(" rev"));
+  weblog.println(ESP.getChipRevision());
+  weblog.print(F("Flash Size: "));
+  weblog.print(ESP.getFlashChipSize() / 1024 / 1024);
+  weblog.println(F(" MB"));
+  weblog.print(F("Sketch Size: "));
+  weblog.print(ESP.getSketchSize() / 1024);
+  weblog.print(F(" KB, Free Sketch Space: "));
+  weblog.print(ESP.getFreeSketchSpace() / 1024);
+  weblog.println(F(" KB"));
 
   setup_config();
 
@@ -156,14 +237,14 @@ void setup() {
   setup_display();
 
   if(!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)) {
-    Serial.println(F("SPIFFS mount failed!"));
+    weblog.println(F("SPIFFS mount failed!"));
     return;
   } else {
-    Serial.print(F("SPIFFS Total: "));
-    Serial.print(SPIFFS.totalBytes() / 1024);
-    Serial.print(F(" KB, Used: "));
-    Serial.print(SPIFFS.usedBytes() / 1024);
-    Serial.println(F(" KB"));
+    weblog.print(F("SPIFFS Total: "));
+    weblog.print(SPIFFS.totalBytes() / 1024);
+    weblog.print(F(" KB, Used: "));
+    weblog.print(SPIFFS.usedBytes() / 1024);
+    weblog.println(F(" KB"));
     load_config(SPIFFS, "/config.ini");
   }
 
@@ -202,7 +283,7 @@ void setup() {
   delay(2000);
   
   if(DEBUG)
-    Serial.println(F("Setup Completed."));
+    weblog.println(F("Setup Completed."));
 
 
 }
@@ -219,6 +300,13 @@ void loop() {
   // armTrigger is set by an interrupt.
   if(armTrigger) {
     operateArm();
+  }
+
+  // Set by /servo_test (webserver.ino) - run here, not in the handler itself. See
+  // the comment on servoTestPending above for why.
+  if(servoTestPending) {
+    servoTestPending = false;
+    testCycleArm(servoTestArm, test_run);
   }
 
   read_encoder();

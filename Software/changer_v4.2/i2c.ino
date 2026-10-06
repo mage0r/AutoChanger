@@ -108,6 +108,24 @@ void onI2CRequest() {
   }
 }
 
+// Turns the secondary I2C bus on or off and saves the setting - used by the serial
+// I2C_ENABLE command, the OLED's I2C page, and the web UI, so all three agree on
+// exactly what "off" means. Unlike WiFi, there's no special response-ordering
+// concern for the web route calling this: this bus has nothing to do with how the
+// web UI itself is reached, so turning it off mid-request doesn't risk the response.
+void setI2CEnabled(boolean enabled) {
+  i2c_enabled = enabled;
+  if(i2c_enabled) {
+    setup_i2c_secondary();
+  } else {
+    // If this was requested over the bus it's about to turn off, the controller
+    // won't be able to read the response back - teardown stops the peripheral from
+    // answering at all, same as disabling WiFi over a WiFi-based connection would.
+    teardown_i2c_secondary();
+  }
+  save_config(SPIFFS, "/config.ini");
+}
+
 void setup_i2c_secondary() {
   I2CSecondary.onReceive(onI2CReceive);
   I2CSecondary.onRequest(onI2CRequest);
@@ -135,11 +153,11 @@ void readI2CCommands() {
   i2cResponse.reset();
   Print *previousOut = cmdOut;
   cmdOut = &i2cResponse;
-  processingViaI2C = true;
+  processingViaSingleShot = true;
 
   processCommand(i2cPendingCommand);
 
-  processingViaI2C = false;
+  processingViaSingleShot = false;
   cmdOut = previousOut;
   i2cResponseReady = true;
 }

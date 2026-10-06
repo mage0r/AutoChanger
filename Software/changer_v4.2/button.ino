@@ -86,7 +86,7 @@ void checkButtons() {
     pgrmState = false;
     menu_position = 0; // reset the cursor, each page uses it differently
     if(DEBUG)
-      Serial.println("Next Menu");
+      weblog.println("Next Menu");
     
     if(menu_page == 2) {
       // entering the arm-adjust page - show the LOW position right away.
@@ -156,12 +156,12 @@ void armAdjustMode() {
       if(menu_position == 1 || menu_position == 3 || menu_position == 5) {
         save_servos(SPIFFS, "/servos.txt");
       } else {
-        save_config(SPIFFS, "/config.txt");
+        save_config(SPIFFS, "/config.ini"); // was "/config.txt" - load_config() never reads that file, so this never actually persisted
         
       }
       menu_position--;
       if(DEBUG)
-        Serial.println(F("Servo value saved."));
+        weblog.println(F("Servo value saved."));
     }
   }
   pgrmExec = false;
@@ -170,32 +170,18 @@ void armAdjustMode() {
 // This is the WiFi page - a single screen. Pressing toggles WiFi on/off.
 void wifiPageMode() {
   if(pgrmExec) {
-    wifi_enabled = !wifi_enabled;
-    if(wifi_enabled) {
-      wifi_counter = millis(); // give it a fresh 30s window to connect before falling back to AP mode
-    } else {
-      WiFi.disconnect(true);
-      WiFi.mode(WIFI_OFF);
-      wifi_connected = false;
-    }
-    save_config(SPIFFS, "/config.ini");
+    setWifiEnabled(!wifi_enabled);
     if(DEBUG)
-      Serial.println(F("WiFi toggled."));
+      weblog.println(F("WiFi toggled."));
   }
   pgrmExec = false;
 }
 
 void i2cPageMode() {
   if(pgrmExec) {
-    i2c_enabled = !i2c_enabled;
-    if(i2c_enabled) {
-      setup_i2c_secondary();
-    } else {
-      teardown_i2c_secondary();
-    }
-    save_config(SPIFFS, "/config.ini");
+    setI2CEnabled(!i2c_enabled);
     if(DEBUG)
-      Serial.println(F("I2C toggled."));
+      weblog.println(F("I2C toggled."));
   }
   pgrmExec = false;
 }
@@ -203,8 +189,8 @@ void i2cPageMode() {
 // Change which program is active.
 void change_program(byte new_program) {
   if(DEBUG) {
-    Serial.print(F("Switching to Program: "));
-    Serial.println(new_program+1);
+    weblog.print(F("Switching to Program: "));
+    weblog.println(new_program+1);
   }
 
   for (int x = 0; x < 4; x++) {
@@ -254,7 +240,7 @@ void programMode() {
       menu_position = 0; // reset the cursor so next time we enter program mode it starts at RES
       menu_page = 0;
       if(DEBUG)
-        Serial.println(F("Saved. Exiting Program Mode."));
+        weblog.println(F("Saved. Exiting Program Mode."));
     }
   } else if (menu_position > patterns[currentPattern].length+2) {
     // We've just added an extra entry
@@ -265,7 +251,7 @@ void programMode() {
           patterns[currentPattern].steps[patterns[currentPattern].length] = '\0';
           menu_position++;
           if(DEBUG)
-            Serial.println(F("Entry added (not yet saved - press SAV to persist)."));
+            weblog.println(F("Entry added (not yet saved - press SAV to persist)."));
         }
     }
   } else {
@@ -274,7 +260,7 @@ void programMode() {
           patterns[currentPattern].steps[menu_position-3] = '0' + i;
           menu_position++;
           if(DEBUG)
-            Serial.println(F("Entry edited (not yet saved - press SAV to persist)."));
+            weblog.println(F("Entry edited (not yet saved - press SAV to persist)."));
         }
     }
   }

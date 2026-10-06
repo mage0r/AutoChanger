@@ -26,6 +26,21 @@ String processor(const String& var)
   if(var == "VERSION")
     return VERSION;
 
+  if(var == "DEBUG_LEVEL")
+    return String(DEBUG);
+  if(var == "I2C_ENABLED")
+    return i2c_enabled ? "ON" : "OFF";
+  if(var == "I2C_TOGGLE_LABEL")
+    return i2c_enabled ? "Disable I2C" : "Enable I2C";
+  if(var == "I2C_TOGGLE_ACTION")
+    return i2c_enabled ? "/i2c_off" : "/i2c_on";
+  if(var == "I2C_ADDRESS") {
+    String hex = String(i2c2_address, HEX);
+    if(hex.length() < 2)
+      hex = "0" + hex; // zero-pad to 2 digits, matching the OLED's I2C page
+    return hex;
+  }
+
   if(var == "CHIPMODEL")
     return String(ESP.getChipModel()) + " rev" + String(ESP.getChipRevision());
   if(var == "FLASHSIZE")
@@ -109,8 +124,8 @@ void setupAsyncServer() {
       return request->requestAuthentication();
     }
     if(!index) {
-      Serial.print(F("Updating: "));
-      Serial.println(filename.c_str());
+      weblog.print(F("Updating: "));
+      weblog.println(filename.c_str());
 
       if(!Update.begin((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000))
 	    {
@@ -124,8 +139,8 @@ void setupAsyncServer() {
     }
     if(final) {
       if(Update.end(true)) {
-        Serial.print(F("The update is finished: "));
-        Serial.println(convertFileSize(index + len));
+        weblog.print(F("The update is finished: "));
+        weblog.println(convertFileSize(index + len));
       } else {
         Update.printError(Serial);
       }
@@ -284,6 +299,198 @@ void setupAsyncServer() {
   // needs the radio in WIFI_AP_STA first, which isn't worth the complexity for a
   // feature that's only really useful when you're already on the network you'd be
   // switching away from.
+  // Turns WiFi off entirely - always needs admin auth (unlike /join, which only
+  // gates once configured), since unlike changing networks, this has no "still
+  // works, just different" outcome: it always disconnects whoever's using it right
+  // now, and only serial or the OLED's WiFi page can turn it back on afterward.
+  server.on("/wifi_off", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
+      return request->requestAuthentication();
+    }
+    // Respond before actually dropping the radio, not after - once WiFi.mode(WIFI_OFF)
+    // runs, there's no guarantee the response still makes it out over the connection
+    // being switched off out from under it.
+    request->send(200, "text/plain",
+      "WiFi disabled. Reconnect over USB serial, or use the unit's own WiFi menu page, to turn it back on.");
+    delay(100);
+    setWifiEnabled(false);
+  });
+
+  // I2C settings all need admin auth, same reasoning as /join: these persist a
+  // config change, not just a momentary action like /next or /press. Unlike WiFi,
+  // disabling this never risks cutting off whoever's making the request - the web
+  // UI runs over WiFi, entirely independent of this bus - so there's no special
+  // response-ordering need here the way /wifi_off has.
+  server.on("/i2c_on", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
+      return request->requestAuthentication();
+    }
+    setI2CEnabled(true);
+    // JSON, not a redirect - the page updates itself in place via JS rather than
+    // navigating anywhere, now that this is reached via fetch() rather than a form.
+    request->send(200, "application/json", "{\"enabled\":true}");
+  });
+  server.on("/i2c_off", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
+      return request->requestAuthentication();
+    }
+    setI2CEnabled(false);
+    request->send(200, "application/json", "{\"enabled\":false}");
+  });
+  server.on("/i2c_address", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
+      return request->requestAuthentication();
+    }
+    if(!request->hasParam("addr")) {
+      request->send(400, "text/plain", "missing addr");
+      return;
+    }
+    // Hex, same as the OLED's I2C page shows it and the form below asks for it -
+    // not decimal, which String::toInt() would otherwise assume.
+    long addr = strtol(request->getParam("addr")->value().c_str(), NULL, 16);
+    if(addr < 0x08 || addr > 0x77) {
+      request->send(400, "text/plain", "address must be between 08 and 77 (hex)");
+      return;
+    }
+    i2c2_address = addr;
+    save_config(SPIFFS, "/config.ini");
+    if(i2c_enabled) {
+      // Apply it immediately rather than requiring a reboot - same idea as
+      // applyWifiCredentials() forcing a fresh connection attempt with new creds.
+      teardown_i2c_secondary();
+      setup_i2c_secondary();
+    }
+    // Echo back the normalized value (zero-padded, same as %I2C_ADDRESS% below) so
+    // the field shows exactly what got saved, not just whatever was typed.
+    String hex = String(i2c2_address, HEX);
+    if(hex.length() < 2)
+      hex = "0" + hex;
+    request->send(200, "application/json", "{\"address\":\"" + hex + "\"}");
+  });
+
+  // Returns everything currently held in weblog's ring buffer (see changer_v4_2.ino) -
+  // the same content the physical USB serial monitor would show, as plain text,
+  // oldest first. No auth - this never changes anything, same as /status.
+  // Runs a command typed into the web console (Serial Log tab) through the same
+  // interpreter Serial and I2C use. No separate response handling needed here -
+  // cmdOut defaults to weblog (see commands.ino), so whatever the command prints
+  // lands in the same log the console is already showing. Needs admin auth: this
+  // is strictly more powerful than any single action elsewhere in the web UI (it's
+  // every serial command, including WIFI, RM, REBOOT), not just one setting.
+  server.on("/command", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
+      return request->requestAuthentication();
+    }
+    if(!request->hasParam("cmd")) {
+      request->send(400, "text/plain", "missing cmd");
+      return;
+    }
+    processingViaSingleShot = true;
+    processCommand(request->getParam("cmd")->value());
+    processingViaSingleShot = false;
+    request->send(200, "text/plain", "OK");
+  });
+
+  server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", weblog.getContents());
+  });
+  server.on("/log_clear", HTTP_GET, [](AsyncWebServerRequest *request) {
+    weblog.clear();
+    request->send(200, "text/plain", "Log cleared.");
+  });
+
+  // Current LOW/HIGH/EJECT PWM values for all 4 arms, plus the shared test cycle
+  // count - no auth, this only reads (same as /status).
+  server.on("/servo_status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    String json = "{\"low\":[";
+    for(int i = 0; i < 4; i++) {
+      if(i > 0) json += ",";
+      json += String(servos[i][0]);
+    }
+    json += "],\"high\":[";
+    for(int i = 0; i < 4; i++) {
+      if(i > 0) json += ",";
+      json += String(servos[i][1]);
+    }
+    json += "],\"eject\":[";
+    for(int i = 0; i < 4; i++) {
+      if(i > 0) json += ",";
+      json += String(servos[i][2]);
+    }
+    json += "],\"testRun\":" + String(test_run) + "}";
+    request->send(200, "application/json", json);
+  });
+
+  // Saves new LOW/HIGH/EJECT values for one arm. Admin auth - this persists a
+  // config change, same bar as the I2C settings. Clamped to 0-4095 (the PCA9685's
+  // documented valid range - see setPWM()'s uint16_t parameter): servos[][] is a
+  // signed int with no clamping on the OLED's own encoder-driven editing, so an
+  // unclamped negative value here would wrap into a huge uint16_t and could drive
+  // a servo somewhere damaging, not just fail cleanly.
+  server.on("/servo_save", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
+      return request->requestAuthentication();
+    }
+    if(!request->hasParam("arm") || !request->hasParam("low") ||
+       !request->hasParam("high") || !request->hasParam("eject")) {
+      request->send(400, "text/plain", "missing arm/low/high/eject");
+      return;
+    }
+    int arm = request->getParam("arm")->value().toInt();
+    if(arm < 0 || arm > 3) {
+      request->send(400, "text/plain", "arm must be 0-3");
+      return;
+    }
+    int low = constrain(request->getParam("low")->value().toInt(), 0, 4095);
+    int high = constrain(request->getParam("high")->value().toInt(), 0, 4095);
+    int eject = constrain(request->getParam("eject")->value().toInt(), 0, 4095);
+    servos[arm][0] = low;
+    servos[arm][1] = high;
+    servos[arm][2] = eject;
+    save_servos(SPIFFS, "/servos.txt");
+    request->send(200, "application/json",
+      "{\"low\":" + String(low) + ",\"high\":" + String(high) + ",\"eject\":" + String(eject) + "}");
+  });
+
+  // Requests the LOW/HIGH test cycle on one arm - doesn't run it here. This handler
+  // runs on the async_tcp task; testCycleArm()'s delay(400) calls block for a
+  // couple of seconds, and blocking that specific task (confirmed from an actual
+  // device crash) trips the ESP32's task watchdog and aborts. Setting a flag for
+  // loop() to act on - see servoTestPending above and the check in loop() - keeps
+  // the actual blocking off the async_tcp task entirely, same as how incoming I2C
+  // commands are deferred to loop() rather than run from their own callback.
+  // No auth - momentary hardware action, same bar as /next/back/press.
+  server.on("/servo_test", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->hasParam("arm")) {
+      request->send(400, "text/plain", "missing arm");
+      return;
+    }
+    int arm = request->getParam("arm")->value().toInt();
+    if(arm < 0 || arm > 3) {
+      request->send(400, "text/plain", "arm must be 0-3");
+      return;
+    }
+    servoTestArm = arm;
+    servoTestPending = true;
+    request->send(200, "text/plain", "Test started.");
+  });
+
+  // Saves the shared test cycle count. Admin auth, same reasoning as /servo_save.
+  // Clamped to 1-50 - testCycleArm() blocks for ~800ms per cycle, so an
+  // unreasonably large count would mean an unreasonably long blocked request.
+  server.on("/servo_testrun", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
+      return request->requestAuthentication();
+    }
+    if(!request->hasParam("value")) {
+      request->send(400, "text/plain", "missing value");
+      return;
+    }
+    test_run = constrain(request->getParam("value")->value().toInt(), 1, 50);
+    save_config(SPIFFS, "/config.ini");
+    request->send(200, "application/json", "{\"testRun\":" + String(test_run) + "}");
+  });
+
   server.on("/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
     int n = WiFi.scanComplete();
 
@@ -554,8 +761,8 @@ String readFile(fs::FS &fs, String path) {
   File file = fs.open("/" + path);
 
   if(!file || file.isDirectory()) {
-    Serial.print(path);
-    Serial.println(F(": File Failed to open"));
+    weblog.print(path);
+    weblog.println(F(": File Failed to open"));
     return fileContent;
   }
 
@@ -570,7 +777,7 @@ void writeFile(fs::FS &fs, String path, const char * message)
 {
   File file = fs.open("/" + path, FILE_WRITE);
   if(!file) {
-    Serial.println(F("Write Failed"));
+    weblog.println(F("Write Failed"));
     return;
   }
   file.print(message);

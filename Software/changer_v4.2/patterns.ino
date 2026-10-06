@@ -62,14 +62,14 @@ void RestoreDefault(byte button) {
   //save_patterns(SPIFFS, "/patterns2.txt");
 
   if(DEBUG) {
-    Serial.print(F("Default Pattern restored for Pattern "));
-    Serial.print(button);
-    Serial.println(".");
+    weblog.print(F("Default Pattern restored for Pattern "));
+    weblog.print(button);
+    weblog.println(".");
 
-    Serial.println(F("Patterns: "));
+    weblog.println(F("Patterns: "));
     for(int x = 0; x < 4; x++) {
-      Serial.print(F("  "));
-      Serial.println(patterns[x].steps);
+      weblog.print(F("  "));
+      weblog.println(patterns[x].steps);
     }
   }
 }
@@ -110,13 +110,13 @@ void parse_pattern_line(String &line, byte index) {
 }
 
 void load_patterns(fs::FS &fs, const char * path) {
-  Serial.print(F("Loading Patterns: "));
-  Serial.print(path);
+  weblog.print(F("Loading Patterns: "));
+  weblog.print(path);
 
   File file = fs.open(path);
   if(!file || file.isDirectory()){
-      Serial.println(F(" - failed to open file for reading"));
-      Serial.println(F("Creating Default Patterns."));
+      weblog.println(F(" - failed to open file for reading"));
+      weblog.println(F("Creating Default Patterns."));
       RestoreDefault(0);
       RestoreDefault(1);
       RestoreDefault(2);
@@ -124,7 +124,7 @@ void load_patterns(fs::FS &fs, const char * path) {
       save_patterns(SPIFFS, path);
       return;
   } else {
-    Serial.println(F(" - Success!"));
+    weblog.println(F(" - Success!"));
   }
 
   byte patternIndex = 0;
@@ -154,19 +154,19 @@ void load_patterns(fs::FS &fs, const char * path) {
 
   file.close();
 
-  Serial.println(F("Pattern Load Complete."));
+  weblog.println(F("Pattern Load Complete."));
 }
 
 void save_patterns(fs::FS &fs, const char * path) {
-  Serial.print(F("Saving Pattern Data: "));
-  Serial.print(path);
+  weblog.print(F("Saving Pattern Data: "));
+  weblog.print(path);
 
   File file = fs.open(path, FILE_WRITE);
   if(!file){
-      Serial.println(F("- failed to open file for writing"));
+      weblog.println(F("- failed to open file for writing"));
       return;
   } else {
-    Serial.print(F(" - File Opened"));
+    weblog.print(F(" - File Opened"));
   }
 
   for(int x = 0; x < 4; x++) {
@@ -175,6 +175,6 @@ void save_patterns(fs::FS &fs, const char * path) {
 
   file.close();
 
-  Serial.println(F(" - Success!"));
+  weblog.println(F(" - Success!"));
 
 }

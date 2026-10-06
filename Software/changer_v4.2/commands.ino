@@ -27,15 +27,16 @@ String currentCommandLine = ""; // the raw line currently being processed, for c
 // serve two transports. It's pointed at &Serial normally; readI2CCommands() in i2c.ino
 // points it at a small in-RAM buffer for the duration of one command, so that command's
 // output lands there instead of going out over USB, then puts it back afterwards.
-Print *cmdOut = &Serial;
+Print *cmdOut = &weblog; // weblog tees to the real Serial too - see changer_v4_2.ino
 
-// True for the duration of a command dispatched from the I2C side (see i2c.ino's
-// readI2CCommands()). Lets a command that genuinely can't work over that transport -
-// see cmd_put() - refuse cleanly instead of hanging. A plain bool, not Print-based
-// like cmdOut, because unlike output there's no generic way to redirect PUT's
-// multi-byte transfer onto a transport whose messages are single bounded
-// transactions - it has to be refused outright, not best-effort redirected.
-bool processingViaI2C = false;
+// True for the duration of a command dispatched from a transport whose messages are
+// single, bounded, one-shot requests rather than a continuous byte stream - I2C (see
+// i2c.ino's readI2CCommands()) and the web console (see /command in webserver.ino).
+// Lets a command that genuinely can't work that way - see cmd_put() - refuse cleanly
+// instead of hanging. A plain bool, not Print-based like cmdOut, because unlike
+// output there's no generic way to redirect PUT's multi-byte transfer onto a
+// transport like these - it has to be refused outright, not best-effort redirected.
+bool processingViaSingleShot = false;
 
 // State for an in-progress PUT (see cmd_put() and the top of readSerialCommands()).
 // Writes land in a .tmp file first and only replace the real file once every byte
@@ -66,6 +67,7 @@ const CommandHelp commandTable[] = {
   {"FIX", "Restores any missing default files (config.ini, patterns.txt, servos.txt, index.html, autochanger.svg, manage.html, ok.html, edit.html, failed.html, join.html, joining.html). Leaves existing files untouched."},
   {"REBOOT", "Restarts the device immediately."},
   {"EJECT_ALL", "Moves every arm to its EJECT position."},
+  {"DEBUG <level>", "Sets the debug output level: 0=off, 1=normal, 2=verbose/millis()-timestamped. Not persisted - resets to the compiled default on reboot."},
 };
 const byte commandTableSize = sizeof(commandTable) / sizeof(commandTable[0]);
 
@@ -151,6 +153,8 @@ void processCommand(String cmd) {
     cmd_reboot();
   } else if(command == "EJECT_ALL") {
     cmd_ejectAll();
+  } else if(command == "DEBUG") {
+    cmd_setDebug(args);
   } else {
     commandError(F("unknown command - send HELP for the list"));
   }
@@ -201,15 +205,7 @@ void cmd_wifiEnable(String args) {
     return;
   }
 
-  wifi_enabled = turnOn;
-  if(wifi_enabled) {
-    wifi_counter = millis(); // fresh 30s window to connect before falling back to AP mode
-  } else {
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-    wifi_connected = false;
-  }
-  save_config(SPIFFS, "/config.ini");
+  setWifiEnabled(turnOn);
 
   commandOK();
 }
@@ -228,16 +224,7 @@ void cmd_i2cEnable(String args) {
     return;
   }
 
-  i2c_enabled = turnOn;
-  if(i2c_enabled) {
-    setup_i2c_secondary();
-  } else {
-    // If this command arrived over the bus it's about to turn off, the controller
-    // won't be able to read this response back - teardown stops the peripheral from
-    // answering at all, same as disabling WiFi over a WiFi-based connection would.
-    teardown_i2c_secondary();
-  }
-  save_config(SPIFFS, "/config.ini");
+  setI2CEnabled(turnOn);
 
   commandOK();
 }
@@ -318,11 +305,12 @@ void cmd_ls() {
 void cmd_put(String args) {
   // The raw bytes that follow a PUT command line are read by readSerialCommands()
   // directly from the Serial stream (see putBytesRemaining there) - there's no
-  // equivalent for I2C, where a single write is one bounded transaction with no
-  // natural way to stream an arbitrary-length follow-up payload the same way.
-  // Refuse cleanly rather than setting up state nothing will ever complete.
-  if(processingViaI2C) {
-    commandError(F("PUT is not supported over I2C - use Serial"));
+  // equivalent for I2C or the web console, where each request is one bounded
+  // transaction with no natural way to stream an arbitrary-length follow-up
+  // payload the same way. Refuse cleanly rather than setting up state nothing
+  // will ever complete.
+  if(processingViaSingleShot) {
+    commandError(F("PUT is not supported over I2C or the web console - use Serial"));
     return;
   }
 
@@ -441,6 +429,20 @@ void cmd_ejectAll() {
   for(int x = 0; x < maxServo; x++) {
     moveServo(x, 2);
   }
+  commandOK();
+}
+
+// DEBUG <level> - not saved to config.ini on purpose: this is for an active
+// debugging session, not a standing setting that should silently survive a reboot
+// and leave verbose logging running indefinitely.
+void cmd_setDebug(String args) {
+  args.trim();
+  int level = args.toInt();
+  if(level < 0 || (level == 0 && args != "0")) {
+    commandError(F("usage: DEBUG <level> - 0=off, 1=normal, 2=verbose"));
+    return;
+  }
+  DEBUG = constrain(level, 0, 10);
   commandOK();
 }
 

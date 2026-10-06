@@ -15,7 +15,7 @@ U8G2_SSD1306_128X32_UNIVISION_1_HW_I2C u8g2(U8G2_R0, /* clock=*/ SCL, /* data=*/
 
 void setup_display() {
   if(DEBUG)
-    Serial.print(F("Configuring Display......"));
+    weblog.print(F("Configuring Display......"));
     
   u8g2.begin();
   // Kick off the Display.
@@ -29,7 +29,7 @@ void setup_display() {
   } while ( u8g2.nextPage() );
 
   if(DEBUG)
-    Serial.println(F("Done."));
+    weblog.println(F("Done."));
 }
 
 // Common display elements.
@@ -196,7 +196,7 @@ void program_display() {
   if(servonum < 0)
     servonum = 0;
 
-  //Serial.println(menu_position);
+  //weblog.println(menu_position);
 }
 
 // Page for adjusting the arm servo positions (Low/High/Eject) and the test cycle count (TEST).

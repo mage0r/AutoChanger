@@ -318,6 +318,32 @@ fieldset{width:700px;background:#f7f7f7;margin:10px 0}
 .seq-digit.d1{font-size:22px;opacity:0.7}
 .seq-digit.d2{font-size:17px;opacity:0.5}
 .seq-digit.d3{font-size:13px;opacity:0.35}
+.hidden{display:none}
+.tabs{display:flex;border-bottom:2px solid #ccc;margin:14px 0 0}
+.tab-btn{padding:8px 16px;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;font-size:15px;color:#555}
+.tab-btn.active{border-bottom-color:#2e7031;color:#2e7031;font-weight:bold}
+.tab-panel{padding:16px 0}
+#tab-wifi fieldset,#tab-i2c fieldset{width:320px;box-sizing:border-box}
+#tab-wifi label,#tab-i2c label{font-size:14px;color:#444}
+#tab-wifi input[type=text],#tab-wifi input[type=password],#tab-wifi select,
+#tab-i2c input[type=text]{display:block;
+padding:8px;margin:6px 0;border:1px solid #ccc;border-radius:4px;box-sizing:border-box}
+#tab-wifi .btn,#tab-i2c .btn{display:block;padding:10px;margin-top:10px;cursor:pointer;box-sizing:border-box}
+#tab-wifi .note,#tab-i2c .note,#tab-log .note{color:#666;font-size:13px}
+#tab-status .btn{padding:8px 16px;cursor:pointer;margin-top:8px}
+.arm-row{display:flex;align-items:center;gap:8px;padding:8px;flex-wrap:wrap}
+.arm-row span.arm-label{width:50px;font-weight:bold;color:#555}
+.arm-row label{font-size:13px;color:#444;margin-left:4px}
+.arm-row input[type=number]{width:70px;padding:5px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box}
+.arm-row button{padding:5px 12px;cursor:pointer}
+#tab-log button{padding:6px 14px;cursor:pointer;margin-bottom:8px}
+#tab-log pre{background:#1e1e1e;color:#d4d4d4;font-family:monospace;font-size:13px;
+padding:10px;border-radius:4px;height:400px;overflow-y:auto;white-space:pre-wrap;
+word-break:break-all;margin:0;box-sizing:border-box}
+#tab-log .cmd-row{display:flex;gap:8px;margin-top:10px}
+#tab-log .cmd-row input{flex:1;padding:8px;border:1px solid #ccc;border-radius:4px;
+font-family:monospace;box-sizing:border-box}
+#tab-log .cmd-row button{margin-bottom:0}
 .pattern-list{width:500px;margin:10px 0}
 .pattern-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:4px}
 .pattern-row.active{background:#e6ffed}
@@ -332,11 +358,277 @@ fieldset{width:700px;background:#f7f7f7;margin:10px 0}
 function switchPattern(n){
   fetch('/switch?pattern='+n).then(refreshStatus);
 }
+function validateUpdate(){
+  var f = document.getElementById('update').files;
+  if(!f.length){ alert('Choose a file!'); return false; }
+  if(!f[0].name.endsWith('.bin')){ alert('Wrong file type!'); return false; }
+}
 function stepBack(){
   fetch('/back').then(refreshStatus);
 }
 function stepNext(){
   fetch('/next').then(refreshStatus);
+}
+var logPollTimer = null;
+function fetchLog(){
+  fetch('/log').then(function(r){return r.text();}).then(function(text){
+    var el = document.getElementById('logContent');
+    var atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 10;
+    el.textContent = text;
+    if(atBottom) el.scrollTop = el.scrollHeight;
+  });
+}
+function clearLog(){
+  fetch('/log_clear').then(fetchLog);
+}
+function setDebugLevel(value){
+  // Reuses the existing DEBUG serial command via /command (see sendCommand()) rather
+  // than a dedicated endpoint - same admin-gated path, nothing new on the backend.
+  adminFetch('/command?cmd=' + encodeURIComponent('DEBUG ' + value)).then(function(r){
+    if(r.status === 401){
+      alert('Login failed - check username and password.');
+    }
+  });
+}
+// Shared by every admin-gated action on this page (WiFi join/disable, I2C settings,
+// the command console). fetch() doesn't reliably trigger the browser's own login
+// prompt the way a real form submission does, so this builds the Authorization
+// header itself instead - but only once a request actually comes back 401, not
+// up front. That matters for /join specifically: it only needs auth once the unit
+// is already configured, and trying the request first (rather than always
+// prompting) is what keeps a fresh/unconfigured unit's join flow friction-free.
+// Credentials are kept in memory only for the rest of this page's life - never
+// persisted - and cleared so the next attempt re-prompts if they're rejected.
+var adminAuth = null;
+function adminFetch(url, options){
+  options = options || {};
+  var headers = {};
+  for(var k in (options.headers || {})) headers[k] = options.headers[k];
+  if(adminAuth) headers['Authorization'] = adminAuth;
+  var opts = {};
+  for(var k2 in options) opts[k2] = options[k2];
+  opts.headers = headers;
+  return fetch(url, opts).then(function(r){
+    if(r.status !== 401) return r;
+    var user = prompt('Admin username:');
+    if(user === null) return r;
+    var pass = prompt('Admin password:');
+    if(pass === null) return r;
+    adminAuth = 'Basic ' + btoa(user + ':' + pass);
+    var headers2 = {};
+    for(var k3 in (options.headers || {})) headers2[k3] = options.headers[k3];
+    headers2['Authorization'] = adminAuth;
+    var opts2 = {};
+    for(var k4 in options) opts2[k4] = options[k4];
+    opts2.headers = headers2;
+    return fetch(url, opts2);
+  });
+}
+function sendCommand(){
+  var input = document.getElementById('cmdInput');
+  var cmd = input.value.trim();
+  if(!cmd) return;
+  adminFetch('/command?cmd=' + encodeURIComponent(cmd)).then(function(r){
+    if(r.status === 401){
+      alert('Login failed - check username and password.');
+      return;
+    }
+    input.value = '';
+    fetchLog();
+  });
+}
+function setJoinStatus(text){
+  document.getElementById('joinStatus').textContent = text;
+}
+function joinWifi(){
+  var ssid = document.getElementById('ssid').value;
+  var password = document.getElementById('password').value;
+  if(!ssid) return;
+  var body = 'ssid=' + encodeURIComponent(ssid) + '&password=' + encodeURIComponent(password);
+  setJoinStatus('Joining...');
+  adminFetch('/join', {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: body})
+    .then(function(r){
+      if(r.status === 401){
+        setJoinStatus('Login failed - check username and password.');
+        return;
+      }
+      if(!r.ok){
+        r.text().then(setJoinStatus);
+        return;
+      }
+      setJoinStatus('Joining network - this page may stop responding if it switches ' +
+        'networks. Check your router, or try http://AutoChanger.local/ shortly.');
+    });
+}
+function disableWifi(){
+  if(!confirm('This will disconnect this device from WiFi immediately. You will need ' +
+    'USB serial access or the units own WiFi menu page to turn it back on. Continue?'))
+    return;
+  adminFetch('/wifi_off').then(function(r){
+    if(r.status === 401){
+      alert('Login failed - check username and password.');
+      return;
+    }
+    r.text().then(function(t){ alert(t); });
+  });
+}
+function toggleI2C(){
+  var btn = document.getElementById('i2cToggleBtn');
+  adminFetch(btn.getAttribute('data-action')).then(function(r){
+    if(r.status === 401){
+      alert('Login failed - check username and password.');
+      return null;
+    }
+    return r.json();
+  }).then(function(data){
+    if(!data) return;
+    document.getElementById('i2cStatus').textContent = data.enabled ? 'ON' : 'OFF';
+    btn.textContent = data.enabled ? 'Disable I2C' : 'Enable I2C';
+    btn.setAttribute('data-action', data.enabled ? '/i2c_off' : '/i2c_on');
+  });
+}
+function saveI2CAddress(){
+  var field = document.getElementById('i2caddr');
+  var addr = field.value.trim();
+  if(!addr) return;
+  adminFetch('/i2c_address?addr=' + encodeURIComponent(addr)).then(function(r){
+    if(r.status === 401){
+      alert('Login failed - check username and password.');
+      return null;
+    }
+    if(!r.ok){
+      r.text().then(function(t){ alert('Failed: ' + t); });
+      return null;
+    }
+    return r.json();
+  }).then(function(data){
+    if(data && data.address) field.value = data.address;
+  });
+}
+function showTab(name){
+  document.querySelectorAll('.tab-panel').forEach(function(p){
+    p.classList.toggle('hidden', p.id !== 'tab-' + name);
+  });
+  document.querySelectorAll('.tab-btn').forEach(function(b){
+    b.classList.toggle('active', b.dataset.tab === name);
+  });
+  // Only poll the (potentially several KB) log while its tab is actually visible,
+  // rather than unconditionally every second like refreshStatus() - no point
+  // spending the bandwidth when nobody's looking at it.
+  if(logPollTimer){
+    clearInterval(logPollTimer);
+    logPollTimer = null;
+  }
+  if(name === 'log'){
+    fetchLog();
+    logPollTimer = setInterval(fetchLog, 1000);
+  }
+  if(name === 'arms'){
+    populateServoStatus();
+  }
+}
+function populateServoStatus(){
+  fetch('/servo_status').then(function(r){return r.json();}).then(function(d){
+    document.getElementById('testRun').value = d.testRun;
+    for(var i=0;i<4;i++){
+      document.getElementById('arm'+i+'low').value = d.low[i];
+      document.getElementById('arm'+i+'high').value = d.high[i];
+      document.getElementById('arm'+i+'eject').value = d.eject[i];
+    }
+  });
+}
+function saveTestRun(){
+  var val = document.getElementById('testRun').value;
+  adminFetch('/servo_testrun?value=' + encodeURIComponent(val)).then(function(r){
+    if(r.status === 401){
+      alert('Login failed - check username and password.');
+      return null;
+    }
+    return r.json();
+  }).then(function(d){
+    if(d) document.getElementById('testRun').value = d.testRun;
+  });
+}
+function saveArm(n){
+  var low = document.getElementById('arm'+n+'low').value;
+  var high = document.getElementById('arm'+n+'high').value;
+  var eject = document.getElementById('arm'+n+'eject').value;
+  adminFetch('/servo_save?arm=' + n + '&low=' + encodeURIComponent(low) +
+    '&high=' + encodeURIComponent(high) + '&eject=' + encodeURIComponent(eject))
+    .then(function(r){
+      if(r.status === 401){
+        alert('Login failed - check username and password.');
+        return null;
+      }
+      return r.json();
+    }).then(function(d){
+      if(!d) return;
+      document.getElementById('arm'+n+'low').value = d.low;
+      document.getElementById('arm'+n+'high').value = d.high;
+      document.getElementById('arm'+n+'eject').value = d.eject;
+    });
+}
+function testArm(n){
+  fetch('/servo_test?arm=' + n);
+}
+var scanPolls = 0;
+function startScan() {
+  document.getElementById('scanBtn').disabled = true;
+  document.getElementById('networks').classList.add('hidden');
+  scanPolls = 0;
+  setScanStatus('Scanning...');
+  pollScan();
+}
+function pollScan() {
+  scanPolls++;
+  if (scanPolls > 20) { // ~20s of polling - something's wrong, don't wait forever
+    setScanStatus('Scan timed out - try again, or enter the network manually below.');
+    document.getElementById('scanBtn').disabled = false;
+    return;
+  }
+  fetch('/scan').then(function(r) { return r.json(); }).then(function(data) {
+    if (data.status === 'done') {
+      showNetworks(data.networks);
+    } else {
+      setTimeout(pollScan, 1000);
+    }
+  }).catch(function() {
+    setScanStatus('Scan failed - try again, or enter the network manually below.');
+    document.getElementById('scanBtn').disabled = false;
+  });
+}
+function showNetworks(networks) {
+  document.getElementById('scanBtn').disabled = false;
+  var select = document.getElementById('networks');
+  select.innerHTML = '<option value="">Select a network...</option>';
+  if (!networks.length) {
+    setScanStatus('No networks found - try again, or enter the network manually below.');
+    return;
+  }
+  setScanStatus('Found ' + networks.length + ' network' + (networks.length === 1 ? '' : 's') + ':');
+  // Signal-strength percent sign built via its character code rather than typed
+  // literally - this file goes through the template processor (see processor() in
+  // webserver.ino), which mangles a literal one exactly as explained on wrapIndex()
+  // above. join.html doesn't need this trick since it's served without a processor.
+  var percentSign = String.fromCharCode(37);
+  networks.forEach(function(n) {
+    var opt = document.createElement('option');
+    opt.value = n.ssid;
+    var pct = Math.max(0, Math.min(100, 2 * (n.rssi + 100)));
+    opt.textContent = n.ssid + ' \u2014 ' + pct + percentSign + (n.secure ? ' (secured)' : '');
+    select.appendChild(opt);
+  });
+  select.classList.remove('hidden');
+}
+function pickNetwork() {
+  var select = document.getElementById('networks');
+  if (select.value) {
+    document.getElementById('ssid').value = select.value;
+    document.getElementById('password').focus();
+  }
+}
+function setScanStatus(text) {
+  document.getElementById('scanStatus').textContent = text;
 }
 function toggleEdit(n){
   var field = document.getElementById('pfield'+n);
@@ -397,6 +689,12 @@ fetch('/autochanger.svg').then(function(r){return r.text();}).then(function(svg)
   refreshStatus();
 });
 setInterval(refreshStatus, 1000);
+// Several actions (I2C settings) redirect back here as "/#tabname" afterwards, rather
+// than leaving a bare text response on screen - land back on that same tab instead of
+// always resetting to Patterns.
+var startTab = window.location.hash.replace('#', '');
+if(['patterns','status','wifi','i2c','arms','log'].indexOf(startTab) !== -1)
+  showTab(startTab);
 </script></head><body>
 <h2>AutoChanger <span class="tagline">by HeartOfPluto</span></h2>
 <div id="armsContainer"></div>
@@ -405,6 +703,16 @@ setInterval(refreshStatus, 1000);
 <span class="sequence-position" id="sequencePosition"></span>
 <button class="back-btn" id="nextBtn" onclick="stepNext()">NEXT</button>
 </div>
+<div class="tabs">
+<button class="tab-btn active" data-tab="patterns" onclick="showTab('patterns')">Patterns</button>
+<button class="tab-btn" data-tab="status" onclick="showTab('status')">System</button>
+<button class="tab-btn" data-tab="wifi" onclick="showTab('wifi')">Wifi</button>
+<button class="tab-btn" data-tab="i2c" onclick="showTab('i2c')">i2c</button>
+<button class="tab-btn" data-tab="arms" onclick="showTab('arms')">Arms</button>
+<button class="tab-btn" data-tab="log" onclick="showTab('log')">Serial</button>
+</div>
+
+<div class="tab-panel" id="tab-patterns">
 <div class="pattern-list">
 <div class="pattern-row" id="prow0">
 <span class="pattern-label" id="plabel0" onclick="switchPattern(0)">Pattern 1:</span>
@@ -427,7 +735,9 @@ setInterval(refreshStatus, 1000);
 <button class="pattern-btn" id="pbtn3" onclick="toggleEdit(3)">Edit</button>
 </div>
 </div>
-<p><a href="/manage">Manage files</a> &middot; <a href="/join.html">WiFi Setup</a> &middot; <a href="https://github.com/mage0r/AutoChanger">GitHub</a></p>
+</div>
+
+<div class="tab-panel hidden" id="tab-status">
 <fieldset><legend>System Status</legend>
 <table><tr><th>SPIFFS</th><th>ESP32 Status</th></tr><tr>
 <td>Total: %SPIFFS_TOTAL_BYTES%<br>Used: %SPIFFS_USED_BYTES%<br>Free: %SPIFFS_FREE_BYTES%</td>
@@ -435,4 +745,133 @@ setInterval(refreshStatus, 1000);
 Chip: %CHIPMODEL%<br>Flash: %FLASHSIZE%<br>Sketch: %SKETCHSIZE% used, %FREESKETCHSPACE% free<br>
 RAM: %GETFREEHEAP% / %GETTOTALHEAP%<br>PSRAM: %GETFREEPSRAM% / %GETTOTALPSRAM%</td>
 </tr></table></fieldset>
+
+<fieldset><legend>Firmware Update</legend>
+<form method="POST" action="/update" enctype="multipart/form-data">
+<input type="file" id="update" name="update">
+<input type="submit" value="Update" onclick="return validateUpdate()" class="btn">
+</form>
+</fieldset>
+</div>
+
+<div class="tab-panel hidden" id="tab-wifi">
+<fieldset><legend>Join a WiFi network</legend>
+<button type="button" class="btn" id="scanBtn" onclick="startScan()">Scan for networks</button>
+<p class="note" id="scanStatus"></p>
+<select id="networks" class="hidden" onchange="pickNetwork()">
+<option value="">Select a network...</option>
+</select>
+<label for="ssid">Network name (SSID)</label>
+<input type="text" id="ssid" name="ssid" required
+autocapitalize="off" autocorrect="off" spellcheck="false">
+<label for="password">Password</label>
+<input type="password" id="password" name="password" autocapitalize="off" autocorrect="off">
+<button type="button" class="btn" onclick="joinWifi()">Join</button>
+<p class="note" id="joinStatus"></p>
+</fieldset>
+<p class="note">Changing networks needs the admin login (same one Manage files uses) -
+you'll be asked the first time.</p>
+
+<fieldset><legend>Disable WiFi</legend>
+<p class="note">Turns WiFi off completely. You'll lose this connection immediately, and
+will need USB serial access or the unit's own WiFi menu page to turn it back on - there's
+no way to re-enable it over the network once it's off.</p>
+<button type="button" class="btn" onclick="disableWifi()">Disable WiFi</button>
+</fieldset>
+</div>
+
+<div class="tab-panel hidden" id="tab-i2c">
+<fieldset><legend>I2C Address</legend>
+<p class="note">Secondary I2C bus (pins 2/SDA, 7/SCL) - lets another board run commands
+against this one, reusing the same interpreter as Serial. Status:
+<span id="i2cStatus">%I2C_ENABLED%</span>.</p>
+<label for="i2caddr">Address (hex, e.g. 42)</label>
+<input type="text" id="i2caddr" value="%I2C_ADDRESS%"
+autocapitalize="off" autocorrect="off" spellcheck="false">
+<button type="button" class="btn" onclick="saveI2CAddress()">Save Address</button>
+</fieldset>
+<p class="note">Saving, enabling or disabling needs the admin login (same one Manage files
+uses) - you'll be asked the first time.</p>
+
+<fieldset><legend>Enable / Disable I2C</legend>
+<button type="button" class="btn" id="i2cToggleBtn" data-action="%I2C_TOGGLE_ACTION%"
+onclick="toggleI2C()">%I2C_TOGGLE_LABEL%</button>
+</fieldset>
+</div>
+
+<div class="tab-panel hidden" id="tab-arms">
+<fieldset><legend>Test Cycle Count</legend>
+<p class="note">How many LOW/HIGH cycles the Test button below runs - same CYCL field
+as the unit's own arm-adjust menu.</p>
+<label for="testRun">Cycles</label>
+<input type="number" id="testRun" min="1" max="50" style="width:70px">
+<button type="button" class="btn" style="display:inline-block;width:auto" onclick="saveTestRun()">Save</button>
+</fieldset>
+
+<fieldset><legend>Arm 1</legend>
+<div class="arm-row">
+<label for="arm0low">Low</label><input type="number" id="arm0low" min="0" max="4095">
+<label for="arm0high">High</label><input type="number" id="arm0high" min="0" max="4095">
+<label for="arm0eject">Eject</label><input type="number" id="arm0eject" min="0" max="4095">
+<button type="button" onclick="saveArm(0)">Save</button>
+<button type="button" onclick="testArm(0)">Test</button>
+</div>
+</fieldset>
+
+<fieldset><legend>Arm 2</legend>
+<div class="arm-row">
+<label for="arm1low">Low</label><input type="number" id="arm1low" min="0" max="4095">
+<label for="arm1high">High</label><input type="number" id="arm1high" min="0" max="4095">
+<label for="arm1eject">Eject</label><input type="number" id="arm1eject" min="0" max="4095">
+<button type="button" onclick="saveArm(1)">Save</button>
+<button type="button" onclick="testArm(1)">Test</button>
+</div>
+</fieldset>
+
+<fieldset><legend>Arm 3</legend>
+<div class="arm-row">
+<label for="arm2low">Low</label><input type="number" id="arm2low" min="0" max="4095">
+<label for="arm2high">High</label><input type="number" id="arm2high" min="0" max="4095">
+<label for="arm2eject">Eject</label><input type="number" id="arm2eject" min="0" max="4095">
+<button type="button" onclick="saveArm(2)">Save</button>
+<button type="button" onclick="testArm(2)">Test</button>
+</div>
+</fieldset>
+
+<fieldset><legend>Arm 4</legend>
+<div class="arm-row">
+<label for="arm3low">Low</label><input type="number" id="arm3low" min="0" max="4095">
+<label for="arm3high">High</label><input type="number" id="arm3high" min="0" max="4095">
+<label for="arm3eject">Eject</label><input type="number" id="arm3eject" min="0" max="4095">
+<button type="button" onclick="saveArm(3)">Save</button>
+<button type="button" onclick="testArm(3)">Test</button>
+</div>
+</fieldset>
+<p class="note">Saving needs the admin login (same one Manage files uses) - you'll be
+asked the first time. Test just moves the arm - no login needed.</p>
+</div>
+
+<div class="tab-panel hidden" id="tab-log">
+<div class="cmd-row">
+<button type="button" onclick="clearLog()">Clear Log</button>
+<label for="debugLevel">Debug level:</label>
+<input type="range" id="debugLevel" min="0" max="2" step="1" value="%DEBUG_LEVEL%"
+oninput="document.getElementById('debugLevelValue').textContent=this.value"
+onchange="setDebugLevel(this.value)">
+<span id="debugLevelValue">%DEBUG_LEVEL%</span>
+</div>
+<p class="note">0 = off, 1 = normal, 2 = verbose (timestamps every log line) - needs the
+admin login (same one Manage files uses).</p>
+<pre id="logContent"></pre>
+<div class="cmd-row">
+<input type="text" id="cmdInput" placeholder="Command, e.g. INFO"
+autocapitalize="off" autocorrect="off" spellcheck="false"
+onkeydown="if(event.key==='Enter') sendCommand();">
+<button type="button" onclick="sendCommand()">Send</button>
+</div>
+<p class="note">Sending a command needs the admin login (same one Manage files uses) -
+you'll be asked the first time.</p>
+</div>
+
+<p><a href="/manage">Manage files</a> &middot; <a href="https://github.com/mage0r/AutoChanger">GitHub</a></p>
 </body></html>)rawliteral";

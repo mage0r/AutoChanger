@@ -5,7 +5,7 @@ ESP32Encoder encoder;
 
 void setup_encoder() {
   if(DEBUG)
-    Serial.println(F("Configuring Encoder."));
+    weblog.println(F("Configuring Encoder."));
     
   ESP32Encoder::useInternalWeakPullResistors = puType::up;
   encoder.attachHalfQuad(PGRM_A, PGRM_B);

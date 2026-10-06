@@ -43,10 +43,21 @@ void syncArmServo() {
 // Cycles the currently selected arm's servo between its LOW and HIGH positions, CYCL times.
 // Used to sanity-check the LOW/HIGH values you've just set on the arm-adjust page.
 void testCycle() {
-  for (int i = 0; i < test_run; i++) {
-    moveServo(currentPattern, 1); // up to HIGH
+  testCycleArm(currentPattern, test_run);
+}
+
+// Does the actual cycling, taking the arm directly rather than relying on
+// currentPattern - that global is reused for which arm the OLED's arm-adjust page
+// has selected, but it's ALSO the active knitting pattern's index. Temporarily
+// overwriting it to test a specific arm from the web (which runs concurrently with
+// whatever the sensor/main loop is doing) could corrupt an in-progress knit if the
+// sensor fires at the wrong moment - this sidesteps that risk entirely by never
+// touching currentPattern at all.
+void testCycleArm(int arm, int count) {
+  for (int i = 0; i < count; i++) {
+    moveServo(arm, 1); // up to HIGH
     delay(400);
-    moveServo(currentPattern, 0); // down to LOW
+    moveServo(arm, 0); // down to LOW
     delay(400);
   }
 }

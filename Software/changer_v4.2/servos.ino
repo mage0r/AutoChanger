@@ -4,7 +4,7 @@
 
  void setup_servos() {
   if(DEBUG)
-    Serial.println(F("Configuring Servo."));
+    weblog.println(F("Configuring Servo."));
     
   pwm.begin();
   
@@ -40,12 +40,12 @@ void moveServo(int x, int y) {
     
      pwm.setPWM(x, 0, servos[x][y]);
     if(DEBUG) {
-      Serial.print(F("Moving Servo: "));
-      Serial.print(x);
+      weblog.print(F("Moving Servo: "));
+      weblog.print(x);
       if(y == 0)
-        Serial.println(F(" down."));
+        weblog.println(F(" down."));
       else
-        Serial.println(F(" up."));
+        weblog.println(F(" up."));
     }
 
     // Only reset the timeout on an actual move. If we reset it unconditionally, a caller that
@@ -63,8 +63,8 @@ void detachServo() {
     for (int x = 0; x < maxServo; x++) {
       pwm.setPWM(x, 0, 0);
       if(DEBUG) {
-        Serial.print(F("Detatch Servo: "));
-        Serial.println(x);
+        weblog.print(F("Detatch Servo: "));
+        weblog.println(x);
       }
     }
     servoTimeout = 0;
@@ -80,7 +80,7 @@ void switchRods() {
   
   if (servonum > patterns[currentPattern].length) {
     if(DEBUG)
-      Serial.println(F("Reset to start"));
+      weblog.println(F("Reset to start"));
     servonum = 1;
   }
 
@@ -101,7 +101,7 @@ void switchRodsBack() {
 
   if (servonum < 1) {
     if(DEBUG)
-      Serial.println(F("Wrapped to end"));
+      weblog.println(F("Wrapped to end"));
     servonum = patterns[currentPattern].length;
   }
 
@@ -110,17 +110,17 @@ void switchRodsBack() {
 }
 
 void load_servos(fs::FS &fs, const char * path) {
-  Serial.print(F("Loading Servos: "));
-  Serial.print(path);
+  weblog.print(F("Loading Servos: "));
+  weblog.print(path);
 
   File file = fs.open(path);
   if(!file || file.isDirectory()){
-      Serial.println(F(" - failed to open file for reading"));
-      Serial.println(F("Creating Default servos."));
+      weblog.println(F(" - failed to open file for reading"));
+      weblog.println(F("Creating Default servos."));
       default_servos();
       return;
   } else {
-    Serial.println(F(" - Success!"));
+    weblog.println(F(" - Success!"));
   }
 
   byte counter1 = 0; // the number of lines
@@ -131,7 +131,7 @@ void load_servos(fs::FS &fs, const char * path) {
 
       char temp = file.read();
 
-      //Serial.print((char)temp);
+      //weblog.print((char)temp);
 
       if(temp == ',') {
         if(counter2 == 0) // it's the first number, which is the number of operations for each servo.
@@ -166,18 +166,18 @@ void load_servos(fs::FS &fs, const char * path) {
   file.close();
 
   
-  Serial.println(F("Servo Config: "));
+  weblog.println(F("Servo Config: "));
   for(int x = 0; x < 4; x++) {
-    Serial.print(F("  "));
+    weblog.print(F("  "));
     for(int y = 0; y < 3; y++) {
-      Serial.print(servos[x][y]);
-      Serial.print(F(":"));
+      weblog.print(servos[x][y]);
+      weblog.print(F(":"));
     }
-    Serial.println();
+    weblog.println();
   }
   
 
-  Serial.println(F("Servo Load Complete."));
+  weblog.println(F("Servo Load Complete."));
 }
 
 void default_servos(){
@@ -200,15 +200,15 @@ void default_servos(){
 }
 
 void save_servos(fs::FS &fs, const char * path) {
-  Serial.print(F("Saving Servo Data: "));
-  Serial.print(path);
+  weblog.print(F("Saving Servo Data: "));
+  weblog.print(path);
 
   File file = fs.open(path, FILE_WRITE);
   if(!file){
-      Serial.println(F(" - failed to open file for writing"));
+      weblog.println(F(" - failed to open file for writing"));
       return;
   } else {
-    Serial.println(F(" - Success!"));
+    weblog.println(F(" - Success!"));
   }
 
   // lets go simple.
