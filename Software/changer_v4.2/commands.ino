@@ -59,6 +59,7 @@ const CommandHelp commandTable[] = {
   {"WIFI <ssid>,<password>", "Sets and saves the WiFi SSID/password, and reconnects immediately if WiFi is currently enabled."},
   {"WIFI_ENABLE ON|OFF", "Turns WiFi on or off and saves the setting."},
   {"I2C_ENABLE ON|OFF", "Turns the secondary I2C bus on or off and saves the setting."},
+  {"SENSOR_ENABLE ON|OFF", "Turns automatic response to the arm sensor on or off and saves the setting - useful alongside S/R/L so AYAB can drive arms directly without the automatic sequence also reacting to every carriage pass."},
   {"INFO", "Shows project/build info, IP, chip model/revision, flash size, sketch size/free space, RAM, PSRAM, and SPIFFS usage."},
   {"LS", "Lists files in SPIFFS with their sizes."},
   {"CAT <filename>", "Prints a file's contents."},
@@ -67,7 +68,12 @@ const CommandHelp commandTable[] = {
   {"FIX", "Restores any missing default files (config.ini, patterns.txt, servos.txt, index.html, autochanger.svg, manage.html, ok.html, edit.html, failed.html, join.html, joining.html). Leaves existing files untouched."},
   {"REBOOT", "Restarts the device immediately."},
   {"EJECT_ALL", "Moves every arm to its EJECT position."},
-  {"DEBUG <level>", "Sets the debug output level: 0=off, 1=normal, 2=verbose/millis()-timestamped. Not persisted - resets to the compiled default on reboot."},
+  {"S<arm>", "AYAB-style: lowers whichever arm(s) are up and raises <arm> (0-3). Returns OK."},
+  {"R<arm>", "AYAB-style: raises <arm> (0-3) without lowering anything else. Returns OK."},
+  {"L<arm>", "AYAB-style: lowers <arm> (0-3). Returns OK."},
+  {"ARMS", "AYAB-style: returns 4 characters, one per arm in order, '+' for up (HIGH) or '_' for down, then OK."},
+  {"P<pattern> <sequence>", "AYAB-style: replaces pattern <pattern> (0-3) with <sequence> (digits 1-4, up to 99 long). Returns OK."},
+  {"DEBUG <level>", "Sets the debug output level: 0=off, 1=normal, 2=verbose/millis()-timestamped. Saved to config.ini."},
 };
 const byte commandTableSize = sizeof(commandTable) / sizeof(commandTable[0]);
 
@@ -137,6 +143,8 @@ void processCommand(String cmd) {
     cmd_wifiEnable(args);
   } else if(command == "I2C_ENABLE") {
     cmd_i2cEnable(args);
+  } else if(command == "SENSOR_ENABLE") {
+    cmd_sensorEnable(args);
   } else if(command == "INFO") {
     cmd_info();
   } else if(command == "LS") {
@@ -153,6 +161,16 @@ void processCommand(String cmd) {
     cmd_reboot();
   } else if(command == "EJECT_ALL") {
     cmd_ejectAll();
+  } else if(command.length() == 2 && command.charAt(0) == 'S' && isDigit(command.charAt(1))) {
+    cmd_switchArm(command.charAt(1) - '0');
+  } else if(command.length() == 2 && command.charAt(0) == 'R' && isDigit(command.charAt(1))) {
+    cmd_raiseArm(command.charAt(1) - '0');
+  } else if(command.length() == 2 && command.charAt(0) == 'L' && isDigit(command.charAt(1))) {
+    cmd_lowerArm(command.charAt(1) - '0');
+  } else if(command.length() == 2 && command.charAt(0) == 'P' && isDigit(command.charAt(1))) {
+    cmd_setPatternCmd(command.charAt(1) - '0', args);
+  } else if(command == "ARMS") {
+    cmd_arms();
   } else if(command == "DEBUG") {
     cmd_setDebug(args);
   } else {
@@ -425,6 +443,26 @@ void cmd_reboot() {
 
 // EJECT_ALL - moves every arm to its EJECT position (servos[x][2]), the same
 // position TEST/EJECT on the arm-adjust menu moves the selected arm to.
+// SENSOR_ENABLE ON|OFF
+void cmd_sensorEnable(String args) {
+  args.trim();
+  args.toUpperCase();
+
+  boolean turnOn;
+  if(args == "ON" || args == "1") {
+    turnOn = true;
+  } else if(args == "OFF" || args == "0") {
+    turnOn = false;
+  } else {
+    commandError(F("usage: SENSOR_ENABLE ON|OFF"));
+    return;
+  }
+
+  setSensorEnabled(turnOn);
+
+  commandOK();
+}
+
 void cmd_ejectAll() {
   for(int x = 0; x < maxServo; x++) {
     moveServo(x, 2);
@@ -432,9 +470,72 @@ void cmd_ejectAll() {
   commandOK();
 }
 
-// DEBUG <level> - not saved to config.ini on purpose: this is for an active
-// debugging session, not a standing setting that should silently survive a reboot
-// and leave verbose logging running indefinitely.
+// AYAB-facing commands (S<arm>, R<arm>, L<arm>, ARMS, P<pattern>) - compact,
+// fixed-format, matching the style AYAB's own protocol uses, rather than this
+// project's usual named-keyword commands. Dispatched in processCommand() by
+// checking the command token's shape (a single letter followed by one digit, or
+// the fixed word ARMS) rather than an exact string match, since there are 16
+// possible S/R/L/P tokens and listing each as its own keyword would be repetitive -
+// see the four else-if branches that call these, just above the ARMS branch.
+
+void cmd_raiseArm(int arm) {
+  if(arm < 0 || arm > 3) {
+    commandError(F("arm must be 0-3"));
+    return;
+  }
+  moveServo(arm, 1);
+  commandOK();
+}
+
+void cmd_lowerArm(int arm) {
+  if(arm < 0 || arm > 3) {
+    commandError(F("arm must be 0-3"));
+    return;
+  }
+  moveServo(arm, 0);
+  commandOK();
+}
+
+// Lowers whichever arm(s) are currently up (normally just one, but this covers
+// every arm armUp[] reports regardless, so the end state is always correct even
+// after an unusual R/L sequence) and raises the requested one.
+void cmd_switchArm(int arm) {
+  if(arm < 0 || arm > 3) {
+    commandError(F("arm must be 0-3"));
+    return;
+  }
+  for(int i = 0; i < 4; i++) {
+    if(armUp[i] && i != arm) {
+      moveServo(i, 0);
+    }
+  }
+  moveServo(arm, 1);
+  commandOK();
+}
+
+// Reports which arms are currently at their HIGH (active) position, one character
+// per arm in order - '+' up, '_' down. EJECT counts as "down" here: it's not the
+// active knitting position, which is the only distinction this query makes.
+void cmd_arms() {
+  String result;
+  for(int i = 0; i < 4; i++) {
+    result += armUp[i] ? '+' : '_';
+  }
+  cmdOut->println(result);
+  commandOK();
+}
+
+// P<pattern> <sequence> - see setPatternSteps() in patterns.ino, which this and
+// the web UI's /setpattern both call.
+void cmd_setPatternCmd(int n, String steps) {
+  String error = setPatternSteps(n, steps);
+  if(error.length()) {
+    commandError(error);
+    return;
+  }
+  commandOK();
+}
+
 void cmd_setDebug(String args) {
   args.trim();
   int level = args.toInt();
@@ -443,6 +544,7 @@ void cmd_setDebug(String args) {
     return;
   }
   DEBUG = constrain(level, 0, 10);
+  save_config(SPIFFS, "/config.ini");
   commandOK();
 }
 

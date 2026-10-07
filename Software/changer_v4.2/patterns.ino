@@ -6,6 +6,51 @@ void setup_patterns() {
   load_patterns(SPIFFS, "/patterns.txt");
 }
 
+// Validates and applies a new step sequence for pattern n (0-3): checks length and
+// that every character is a logical digit 1-4, converts those to the stored 0-3
+// array index, saves to /patterns.txt, and re-syncs the physical arm if n is the
+// currently active pattern. Returns an empty string on success, or a short
+// human-readable reason on failure. Shared by the web UI's /setpattern
+// (webserver.ino) and the serial/AYAB P<pattern> command (commands.ino), so this
+// validation lives in exactly one place rather than being duplicated between them.
+String setPatternSteps(int n, String steps) {
+  if(n < 0 || n > 3) {
+    return "n must be 0-3";
+  }
+  if(steps.length() > MAX_PATTERN_LENGTH) {
+    return "sequence too long";
+  }
+  for(unsigned int i = 0; i < steps.length(); i++) {
+    if(steps[i] < '1' || steps[i] > '4') {
+      return "sequence must only contain digits 1-4";
+    }
+  }
+
+  // convert the logical 1-4 callers use to the stored 0-3 array index.
+  for(unsigned int i = 0; i < steps.length(); i++) {
+    steps[i] = steps[i] - 1;
+  }
+
+  steps.toCharArray(patterns[n].steps, MAX_PATTERN_LENGTH+1);
+  patterns[n].length = steps.length();
+  save_patterns(SPIFFS, "/patterns.txt");
+
+  if(n == currentPattern) {
+    // re-sync the physical arm to match the freshly edited sequence.
+    for (int x = 0; x < 4; x++) {
+      moveServo(x, 0);
+    }
+    if(patterns[currentPattern].length) {
+      servonum = 1;
+      moveServo(patterns[currentPattern].steps[0] - '0', 1);
+    } else {
+      servonum = -1;
+    }
+  }
+
+  return ""; // success
+}
+
 // This temporary pattern is used to contain only the 7 characters
 // the display can handle.
 // Only used for the main page.

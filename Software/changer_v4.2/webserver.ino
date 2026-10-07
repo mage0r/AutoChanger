@@ -34,6 +34,12 @@ String processor(const String& var)
     return i2c_enabled ? "Disable I2C" : "Enable I2C";
   if(var == "I2C_TOGGLE_ACTION")
     return i2c_enabled ? "/i2c_off" : "/i2c_on";
+  if(var == "SENSOR_ENABLED")
+    return sensor_enabled ? "ON" : "OFF";
+  if(var == "SENSOR_TOGGLE_LABEL")
+    return sensor_enabled ? "Disable Sensor" : "Enable Sensor";
+  if(var == "SENSOR_TOGGLE_ACTION")
+    return sensor_enabled ? "/sensor_off" : "/sensor_on";
   if(var == "I2C_ADDRESS") {
     String hex = String(i2c2_address, HEX);
     if(hex.length() < 2)
@@ -337,6 +343,26 @@ void setupAsyncServer() {
     setI2CEnabled(false);
     request->send(200, "application/json", "{\"enabled\":false}");
   });
+
+  // Toggles automatic response to the arm sensor - see setSensorEnabled() in
+  // arm.ino. Admin auth, same reasoning as I2C: persists a config change. No
+  // response-ordering concern like /wifi_off - this doesn't affect how the web UI
+  // itself is reached, only whether the sensor interrupt's response runs.
+  server.on("/sensor_on", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
+      return request->requestAuthentication();
+    }
+    setSensorEnabled(true);
+    request->send(200, "application/json", "{\"enabled\":true}");
+  });
+  server.on("/sensor_off", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
+      return request->requestAuthentication();
+    }
+    setSensorEnabled(false);
+    request->send(200, "application/json", "{\"enabled\":false}");
+  });
+
   server.on("/i2c_address", HTTP_GET, [](AsyncWebServerRequest *request) {
     if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
       return request->requestAuthentication();
@@ -460,6 +486,24 @@ void setupAsyncServer() {
   // the actual blocking off the async_tcp task entirely, same as how incoming I2C
   // commands are deferred to loop() rather than run from their own callback.
   // No auth - momentary hardware action, same bar as /next/back/press.
+  // Moves one arm directly to a given PWM value - see previewServo() in servos.ino.
+  // This is a single, immediate move (not a blocking cycle like /servo_test), so no
+  // watchdog concern calling it straight from the handler. No auth - momentary
+  // hardware action, same bar as /next/back/press/servo_test.
+  server.on("/servo_preview", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->hasParam("arm") || !request->hasParam("value")) {
+      request->send(400, "text/plain", "missing arm/value");
+      return;
+    }
+    int arm = request->getParam("arm")->value().toInt();
+    if(arm < 0 || arm > 3) {
+      request->send(400, "text/plain", "arm must be 0-3");
+      return;
+    }
+    previewServo(arm, request->getParam("value")->value().toInt());
+    request->send(200, "text/plain", "OK");
+  });
+
   server.on("/servo_test", HTTP_GET, [](AsyncWebServerRequest *request) {
     if(!request->hasParam("arm")) {
       request->send(400, "text/plain", "missing arm");
@@ -656,43 +700,11 @@ void setupAsyncServer() {
     }
 
     int n = request->getParam("n")->value().toInt();
-    if(n < 0 || n > 3) {
-      request->send(400, "text/plain", "n must be 0-3");
-      return;
-    }
-
     String steps = request->getParam("steps")->value();
-    if(steps.length() > MAX_PATTERN_LENGTH) {
-      request->send(400, "text/plain", "sequence too long");
+    String error = setPatternSteps(n, steps);
+    if(error.length()) {
+      request->send(400, "text/plain", error);
       return;
-    }
-    for(unsigned int i = 0; i < steps.length(); i++) {
-      if(steps[i] < '1' || steps[i] > '4') {
-        request->send(400, "text/plain", "sequence must only contain digits 1-4");
-        return;
-      }
-    }
-
-    // convert the logical 1-4 the page shows back to the stored 0-3 array index.
-    for(unsigned int i = 0; i < steps.length(); i++) {
-      steps[i] = steps[i] - 1;
-    }
-
-    steps.toCharArray(patterns[n].steps, MAX_PATTERN_LENGTH+1);
-    patterns[n].length = steps.length();
-    save_patterns(SPIFFS, "/patterns.txt");
-
-    if(n == currentPattern) {
-      // re-sync the physical arm to match the freshly edited sequence.
-      for (int x = 0; x < 4; x++) {
-        moveServo(x, 0);
-      }
-      if(patterns[currentPattern].length) {
-        servonum = 1;
-        moveServo(patterns[currentPattern].steps[0] - '0', 1);
-      } else {
-        servonum = -1;
-      }
     }
 
     request->send(200);

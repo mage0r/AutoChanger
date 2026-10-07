@@ -79,7 +79,8 @@ void checkButtons() {
   
 
   // This one iterates throught he menu pages.
-  // Cycles 0 (main) -> 1 (program) -> 2 (arm adjust) -> 3 (wifi) -> 4 (i2c) -> back to 0.
+  // Cycles 0 (main) -> 1 (program) -> 2 (arm adjust) -> 3 (wifi) -> 4 (i2c) ->
+  // 5 (sensor) -> back to 0.
   // held for two seconds
   if(pgrmState && pgrmDebouncer.duration() > 2000) {
     menu_page++;
@@ -91,7 +92,7 @@ void checkButtons() {
     if(menu_page == 2) {
       // entering the arm-adjust page - show the LOW position right away.
       syncArmServo();
-    } else if(menu_page == 5) {
+    } else if(menu_page == 6) {
       // wrap back round to the main page.
       for (int x = 0; x < 4; x++) {
         moveServo(x,0); // put all the arms back down - they may have been left up/mid-adjust on the arm-adjust page.
@@ -118,6 +119,8 @@ void checkButtons() {
     wifiPageMode();
   else if(menu_page == 4)
     i2cPageMode();
+  else if(menu_page == 5)
+    sensorPageMode();
 
  
 
@@ -182,6 +185,15 @@ void i2cPageMode() {
     setI2CEnabled(!i2c_enabled);
     if(DEBUG)
       weblog.println(F("I2C toggled."));
+  }
+  pgrmExec = false;
+}
+
+void sensorPageMode() {
+  if(pgrmExec) {
+    setSensorEnabled(!sensor_enabled);
+    if(DEBUG)
+      weblog.println(F("Sensor toggled."));
   }
   pgrmExec = false;
 }

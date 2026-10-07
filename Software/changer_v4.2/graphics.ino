@@ -267,6 +267,14 @@ void i2c_display() {
   }
 }
 
+void sensor_display() {
+  u8g2.setFont(u8g2_font_fub11_tr);
+
+  u8g2.setCursor(10, 14);
+  u8g2.print("SENSOR: ");
+  u8g2.print(sensor_enabled ? "<ON>" : "<OFF>");
+}
+
 // All the displays
 // terrible Idea.  I regret it already.
 void display_page() {
@@ -294,13 +302,12 @@ void display_page() {
       } else if( menu_page == 4 ) {
         // Enable/disable the secondary I2C bus and show its configured address.
         i2c_display();
+      } else if( menu_page == 5 ) {
+        // Enable/disable automatic response to the arm sensor.
+        sensor_display();
       }
       /*
-       * else if( menu_page == 5 ) {
-        // basic options.
-        // disable the buzzer, disable errors.
-        
-      } else if( menu_page == 6 ) {
+       * else if( menu_page == 7 ) {
         // Update
         // check if new version is 
         

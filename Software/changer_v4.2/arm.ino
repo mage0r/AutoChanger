@@ -2,6 +2,18 @@
  * operations related to our arm, ie. the shuttle that moves past the sensor.
  */
 
+// Turns automatic response to the arm sensor on or off and saves the setting - used
+// by the serial SENSOR_ENABLE command, the OLED's sensor page, and (indirectly)
+// nothing else yet. The sensor itself keeps firing either way; see the gating
+// comment in changer_v4_2.ino's loop() for what actually changes. Mainly useful
+// alongside the AYAB-facing S/R/L commands (commands.ino) - AYAB driving arms
+// directly and the automatic sequence both reacting to every carriage pass would
+// fight each other.
+void setSensorEnabled(boolean enabled) {
+  sensor_enabled = enabled;
+  save_config(SPIFFS, "/config.ini");
+}
+
 void operateArm() {
  // Check if we need to update the arm
     // We only need to do this if our pattern is non-zero

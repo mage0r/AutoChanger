@@ -24,6 +24,8 @@ void setup_config() {
   wifi_enabled = true;
   i2c_enabled = false;
   i2c2_address = I2C2_ADDRESS_DEFAULT;
+  sensor_enabled = true;
+  DEBUG = 1;
 
 }
 
@@ -127,6 +129,10 @@ void assign_config(String name, String value) {
       i2c2_address = parsed;
   } else if(name == "debounceDelay") {
     debounceDelay = value.toInt();
+  } else if(name == "debug") {
+    DEBUG = constrain(value.toInt(), 0, 10);
+  } else if(name == "sensor_enabled") {
+    sensor_enabled = value.toInt();
   }
 }
 
@@ -153,6 +159,8 @@ void save_config(fs::FS &fs, const char * path) {
   temp_message += "i2c_enabled="+(String)i2c_enabled+"\n";
   temp_message += "i2c2_address="+(String)i2c2_address+"\n";
   temp_message += "debounceDelay="+(String)debounceDelay+"\n";
+  temp_message += "debug="+(String)DEBUG+"\n";
+  temp_message += "sensor_enabled="+(String)sensor_enabled+"\n";
 
   file.print(temp_message);
   file.close();

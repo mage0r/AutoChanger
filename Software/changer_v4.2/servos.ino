@@ -34,6 +34,8 @@
 // y is the position to move to in the "servos" array
 void moveServo(int x, int y) {
 
+  armUp[x] = (y == 1); // see the comment on armUp[] in changer_v4_2.ino
+
   if(pwm.getPWM(x) != servos[x][y]) {
   // only update servoCount if the read position is different to where we're trying to get to.
     servoCount[x]++;
@@ -53,6 +55,25 @@ void moveServo(int x, int y) {
     // would keep the servo powered indefinitely even while sitting idle, since detachServo()
     // never gets a 400ms gap with nothing happening to detach into.
     servoTimeout = millis();
+  }
+}
+
+// Moves an arm directly to an arbitrary PWM value, bypassing servos[][] entirely -
+// used to preview a Low/High/Eject value from the web UI's Arm Positions tab before
+// it's been saved, so moveServo()'s "look up servos[arm][field]" wouldn't have the
+// right value to use yet. Clamped the same as /servo_save (see webserver.ino) and
+// for the same reason - this takes a raw typed value, not one that's already been
+// validated.
+void previewServo(int arm, int value) {
+  value = constrain(value, 0, 4095);
+  pwm.setPWM(arm, 0, value);
+  servoCount[arm]++;
+  servoTimeout = millis();
+  if(DEBUG) {
+    weblog.print(F("Previewing Servo: "));
+    weblog.print(arm);
+    weblog.print(F(" at "));
+    weblog.println(value);
   }
 }
 

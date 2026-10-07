@@ -9,14 +9,16 @@
  *  sure I didn't miss any event triggers from the sensor.  Generally, the Nano only having two interrupt pins
  *  didn't help.
  *
- *  The TinyPICO's are a bit pricey and getting hard to get.
+ * The TinyPICO's are a bit pricey and getting hard to get.
  *  
- *  Oh god, please don't keep reading this code.  It is awful.
- *  It was awful when I wrote it, Claude has implemented a lot of features for me and has not made it any easier to read.
- *  Probably fair to say it's Claudes more than mine now really.
+ *  Oh god, please don't keep reading this code.  It is awful.  It was awful before and Claude has been contributing.
  *  
  *
  ****************************************************/
+
+// Set our version number.  Don't forget to update when featureset changes
+#define PROJECT "AutoChanger"
+#define VERSION "V.4.2.9"
 
 #include <Wire.h>
 #include <Bounce2.h>
@@ -108,10 +110,6 @@ LogBuffer weblog;
 // 2 shows timing information.
 boolean BUZZER = 1; // Is the buzzer on or off. used to be a define, now a bool.
 
-// Set our version number.  Don't forget to update when featureset changes
-#define PROJECT "AutoChanger"
-#define VERSION "V.4.2.8"
-
 #define ARM 10
 #define BUTTON_1 13
 #define BUTTON_2 14
@@ -130,6 +128,7 @@ boolean BUZZER = 1; // Is the buzzer on or off. used to be a define, now a bool.
 #define I2C2_RESPONSE_MAX 120 // stay comfortably under the ~126 usable bytes of Wire's 128-byte buffer
 
 boolean i2c_enabled = false; // persisted in config.ini - see I2C_ENABLE in commands.ino
+boolean sensor_enabled = true; // persisted in config.ini - see SENSOR_ENABLE in commands.ino
 uint8_t i2c2_address = I2C2_ADDRESS_DEFAULT; // persisted in config.ini - 7-bit address, 0x08-0x77
 
 #define FORMAT_SPIFFS_IF_FAILED true
@@ -138,6 +137,15 @@ uint8_t i2c2_address = I2C2_ADDRESS_DEFAULT; // persisted in config.ini - 7-bit 
 // content for this array is loaded from eeprom
 // closed, open, eject
 int servos[4][3];
+
+// Tracks which arms are currently at their HIGH (active) position, independent of
+// the automatic pattern sequence - used by the AYAB-facing ARMS query and S<arm>
+// command (see commands.ino). Set unconditionally at the top of moveServo() so it
+// stays accurate regardless of which of the many callers (the sequence, a test
+// cycle, EJECT_ALL, these new commands, the web UI) triggered the move, and
+// regardless of moveServo()'s own "skip if already at that PWM value" optimisation -
+// the commanded position is what this tracks, not just whether a write happened.
+bool armUp[4] = {false, false, false, false};
 
 // A servo test is requested here (see /servo_test in webserver.ino) and actually run
 // from loop() (see below), never from the web handler itself. ESPAsyncWebServer
@@ -297,9 +305,19 @@ void loop() {
   readSerialCommands();
   readI2CCommands();
 
-  // armTrigger is set by an interrupt.
+  // armTrigger is set by an interrupt - the ISR itself keeps firing regardless of
+  // sensor_enabled (it's too trivial to be worth detaching/reattaching for this),
+  // this is just where the response to it is gated. Still clears armTrigger on the
+  // disabled path, not just when acting on it - operateArm() does that internally,
+  // but skipping it entirely would leave a stale true sitting there, ready to fire
+  // a phantom move the instant the sensor is re-enabled even though it hasn't
+  // actually passed since.
   if(armTrigger) {
-    operateArm();
+    if(sensor_enabled) {
+      operateArm();
+    } else {
+      armTrigger = false;
+    }
   }
 
   // Set by /servo_test (webserver.ino) - run here, not in the handler itself. See

@@ -3,6 +3,22 @@ AutoChanger - A Knitting Machine Auto Colour Changer to replace a Brother KRC-90
 
 This project was designed to provide a lower cost replacement for the commercial auto colour changer available from Brother for their 1980's electronic knitting machines.
 
+How to use your AutoChanger
+============
+
+Thanks for purchasing or building your own AutoChanger.  I've put together a page of all the different features for you to try.
+
+It is highly recommended you upgrade your AutoChanger firmware to the latest.  The current latest is v4.2.9
+
+[How to Upgrade Your AutoChanger Firmware](https://github.com/mage0r/AutoChanger/wiki/How-to-upgrade)
+
+[How to Use Your AutoChanger](https://github.com/mage0r/AutoChanger/wiki/How-to-use-Firmware-Version-4.2)
+
+[Still using Version-3.9?  Check it out here](https://github.com/mage0r/AutoChanger/wiki/How-to-use-Firmware-Version-3.9)
+
+Where did this come from?
+============
+
 You can read about the progress of this design at the following links:
 
 [Building a better colour changer - Part 1 - Designing Hardware](https://github.com/mage0r/AutoChanger/wiki/Building-a-better-Colour-Changer-%E2%80%93-Part-1-%E2%80%93-Designing-hardware)
@@ -19,12 +35,7 @@ Version 2.0 to 3.0 was TinyPico Based.  You can read about it at [Hardware Versi
 
 Version 3.0 is a whole new build using an ESP32s3.  You can read about it at [Hardware Version 3.0](https://github.com/mage0r/AutoChanger/wiki/Hardware-Version-3.0)
 
-How to use your AutoChanger
-============
 
-Thanks for purchasing or building your own AutoChanger.  I've put together a page of all the different features for you to try.
-
-[How to Use Your AutoChanger](https://github.com/mage0r/AutoChanger/wiki/How-to-use-Firmware-Version-3.9)
 
 CREDITS
 ------------

@@ -305,12 +305,12 @@ const char index_html[] PROGMEM = R"rawliteral(
 <style>
 body{background:#f7f7f7;font-family:Arial,sans-serif;padding:6px 20px 20px}
 h2{margin:0 0 6px}
-table{background:#ddd;border-collapse:collapse;width:650px}
+table{background:#ddd;border-collapse:collapse;width:480px;box-sizing:border-box}
 td,th{border:1px solid #ddd;text-align:left;padding:8px}
 tr:nth-child(even){background:#fff}
-fieldset{width:700px;background:#f7f7f7;margin:10px 0}
-#armsContainer{width:380px;padding:4px 0 16px}
-.sequence-row{width:380px;display:flex;align-items:center;justify-content:space-between;margin:0 0 14px}
+fieldset{width:500px;background:#f7f7f7;margin:10px 0;box-sizing:border-box;padding:10px}
+#armsContainer{width:500px;padding:4px 0 16px}
+.sequence-row{width:500px;display:flex;align-items:center;justify-content:space-between;margin:0 0 14px}
 .back-btn{padding:6px 14px;cursor:pointer}
 .sequence-position{text-align:center}
 .seq-digit{display:inline-block;margin:0 3px;font-weight:bold;color:#333}
@@ -323,24 +323,24 @@ fieldset{width:700px;background:#f7f7f7;margin:10px 0}
 .tab-btn{padding:8px 16px;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;font-size:15px;color:#555}
 .tab-btn.active{border-bottom-color:#2e7031;color:#2e7031;font-weight:bold}
 .tab-panel{padding:16px 0}
-#tab-wifi fieldset,#tab-i2c fieldset{width:320px;box-sizing:border-box}
 #tab-wifi label,#tab-i2c label{font-size:14px;color:#444}
 #tab-wifi input[type=text],#tab-wifi input[type=password],#tab-wifi select,
 #tab-i2c input[type=text]{display:block;
 padding:8px;margin:6px 0;border:1px solid #ccc;border-radius:4px;box-sizing:border-box}
 #tab-wifi .btn,#tab-i2c .btn{display:block;padding:10px;margin-top:10px;cursor:pointer;box-sizing:border-box}
-#tab-wifi .note,#tab-i2c .note,#tab-log .note{color:#666;font-size:13px}
+#tab-arms .btn{padding:8px 16px;cursor:pointer;margin-top:8px}
+#tab-wifi .note,#tab-i2c .note,#tab-log .note,#tab-arms .note{color:#666;font-size:13px}
 #tab-status .btn{padding:8px 16px;cursor:pointer;margin-top:8px}
 .arm-row{display:flex;align-items:center;gap:8px;padding:8px;flex-wrap:wrap}
 .arm-row span.arm-label{width:50px;font-weight:bold;color:#555}
-.arm-row label{font-size:13px;color:#444;margin-left:4px}
-.arm-row input[type=number]{width:70px;padding:5px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box}
+.arm-row label{font-size:13px;color:#444;margin-left:4px;cursor:pointer;user-select:none}
+.arm-row input[type=number]{width:50px;padding:5px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box}
 .arm-row button{padding:5px 12px;cursor:pointer}
 #tab-log button{padding:6px 14px;cursor:pointer;margin-bottom:8px}
 #tab-log pre{background:#1e1e1e;color:#d4d4d4;font-family:monospace;font-size:13px;
 padding:10px;border-radius:4px;height:400px;overflow-y:auto;white-space:pre-wrap;
-word-break:break-all;margin:0;box-sizing:border-box}
-#tab-log .cmd-row{display:flex;gap:8px;margin-top:10px}
+word-break:break-all;margin:0;box-sizing:border-box;width:500px}
+#tab-log .cmd-row{display:flex;gap:8px;margin-top:10px;width:500px;box-sizing:border-box}
 #tab-log .cmd-row input{flex:1;padding:8px;border:1px solid #ccc;border-radius:4px;
 font-family:monospace;box-sizing:border-box}
 #tab-log .cmd-row button{margin-bottom:0}
@@ -380,6 +380,19 @@ function fetchLog(){
 }
 function clearLog(){
   fetch('/log_clear').then(fetchLog);
+}
+function downloadLog(){
+  fetch('/log').then(function(r){return r.text();}).then(function(text){
+    var blob = new Blob([text], {type: 'text/plain'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'autochanger-log.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
 }
 function setDebugLevel(value){
   // Reuses the existing DEBUG serial command via /command (see sendCommand()) rather
@@ -487,6 +500,21 @@ function toggleI2C(){
     btn.setAttribute('data-action', data.enabled ? '/i2c_off' : '/i2c_on');
   });
 }
+function toggleSensor(){
+  var btn = document.getElementById('sensorToggleBtn');
+  adminFetch(btn.getAttribute('data-action')).then(function(r){
+    if(r.status === 401){
+      alert('Login failed - check username and password.');
+      return null;
+    }
+    return r.json();
+  }).then(function(data){
+    if(!data) return;
+    document.getElementById('sensorStatus').textContent = data.enabled ? 'ON' : 'OFF';
+    btn.textContent = data.enabled ? 'Disable Sensor' : 'Enable Sensor';
+    btn.setAttribute('data-action', data.enabled ? '/sensor_off' : '/sensor_on');
+  });
+}
 function saveI2CAddress(){
   var field = document.getElementById('i2caddr');
   var addr = field.value.trim();
@@ -570,6 +598,11 @@ function saveArm(n){
 }
 function testArm(n){
   fetch('/servo_test?arm=' + n);
+}
+function previewArm(n, field){
+  var val = document.getElementById('arm'+n+field).value;
+  if(val === '') return;
+  fetch('/servo_preview?arm=' + n + '&value=' + encodeURIComponent(val));
 }
 var scanPolls = 0;
 function startScan() {
@@ -810,9 +843,9 @@ as the unit's own arm-adjust menu.</p>
 
 <fieldset><legend>Arm 1</legend>
 <div class="arm-row">
-<label for="arm0low">Low</label><input type="number" id="arm0low" min="0" max="4095">
-<label for="arm0high">High</label><input type="number" id="arm0high" min="0" max="4095">
-<label for="arm0eject">Eject</label><input type="number" id="arm0eject" min="0" max="4095">
+<label for="arm0low">Low</label><input type="number" id="arm0low" min="0" max="4095" onfocus="previewArm(0,'low')" oninput="previewArm(0,'low')">
+<label for="arm0high">High</label><input type="number" id="arm0high" min="0" max="4095" onfocus="previewArm(0,'high')" oninput="previewArm(0,'high')">
+<label for="arm0eject">Eject</label><input type="number" id="arm0eject" min="0" max="4095" onfocus="previewArm(0,'eject')" oninput="previewArm(0,'eject')">
 <button type="button" onclick="saveArm(0)">Save</button>
 <button type="button" onclick="testArm(0)">Test</button>
 </div>
@@ -820,9 +853,9 @@ as the unit's own arm-adjust menu.</p>
 
 <fieldset><legend>Arm 2</legend>
 <div class="arm-row">
-<label for="arm1low">Low</label><input type="number" id="arm1low" min="0" max="4095">
-<label for="arm1high">High</label><input type="number" id="arm1high" min="0" max="4095">
-<label for="arm1eject">Eject</label><input type="number" id="arm1eject" min="0" max="4095">
+<label for="arm1low">Low</label><input type="number" id="arm1low" min="0" max="4095" onfocus="previewArm(1,'low')" oninput="previewArm(1,'low')">
+<label for="arm1high">High</label><input type="number" id="arm1high" min="0" max="4095" onfocus="previewArm(1,'high')" oninput="previewArm(1,'high')">
+<label for="arm1eject">Eject</label><input type="number" id="arm1eject" min="0" max="4095" onfocus="previewArm(1,'eject')" oninput="previewArm(1,'eject')">
 <button type="button" onclick="saveArm(1)">Save</button>
 <button type="button" onclick="testArm(1)">Test</button>
 </div>
@@ -830,9 +863,9 @@ as the unit's own arm-adjust menu.</p>
 
 <fieldset><legend>Arm 3</legend>
 <div class="arm-row">
-<label for="arm2low">Low</label><input type="number" id="arm2low" min="0" max="4095">
-<label for="arm2high">High</label><input type="number" id="arm2high" min="0" max="4095">
-<label for="arm2eject">Eject</label><input type="number" id="arm2eject" min="0" max="4095">
+<label for="arm2low">Low</label><input type="number" id="arm2low" min="0" max="4095" onfocus="previewArm(2,'low')" oninput="previewArm(2,'low')">
+<label for="arm2high">High</label><input type="number" id="arm2high" min="0" max="4095" onfocus="previewArm(2,'high')" oninput="previewArm(2,'high')">
+<label for="arm2eject">Eject</label><input type="number" id="arm2eject" min="0" max="4095" onfocus="previewArm(2,'eject')" oninput="previewArm(2,'eject')">
 <button type="button" onclick="saveArm(2)">Save</button>
 <button type="button" onclick="testArm(2)">Test</button>
 </div>
@@ -840,20 +873,30 @@ as the unit's own arm-adjust menu.</p>
 
 <fieldset><legend>Arm 4</legend>
 <div class="arm-row">
-<label for="arm3low">Low</label><input type="number" id="arm3low" min="0" max="4095">
-<label for="arm3high">High</label><input type="number" id="arm3high" min="0" max="4095">
-<label for="arm3eject">Eject</label><input type="number" id="arm3eject" min="0" max="4095">
+<label for="arm3low">Low</label><input type="number" id="arm3low" min="0" max="4095" onfocus="previewArm(3,'low')" oninput="previewArm(3,'low')">
+<label for="arm3high">High</label><input type="number" id="arm3high" min="0" max="4095" onfocus="previewArm(3,'high')" oninput="previewArm(3,'high')">
+<label for="arm3eject">Eject</label><input type="number" id="arm3eject" min="0" max="4095" onfocus="previewArm(3,'eject')" oninput="previewArm(3,'eject')">
 <button type="button" onclick="saveArm(3)">Save</button>
 <button type="button" onclick="testArm(3)">Test</button>
 </div>
 </fieldset>
 <p class="note">Saving needs the admin login (same one Manage files uses) - you'll be
 asked the first time. Test just moves the arm - no login needed.</p>
+
+<fieldset><legend>Enable / Disable Sensor</legend>
+<p class="note">Turns automatic response to the arm sensor on or off - useful if
+something else (like AYAB over the S/R/L commands) is driving the arms directly and
+shouldn't also have the automatic sequence reacting to every carriage pass.
+Status: <span id="sensorStatus">%SENSOR_ENABLED%</span>.</p>
+<button type="button" class="btn" id="sensorToggleBtn" data-action="%SENSOR_TOGGLE_ACTION%"
+onclick="toggleSensor()">%SENSOR_TOGGLE_LABEL%</button>
+</fieldset>
 </div>
 
 <div class="tab-panel hidden" id="tab-log">
 <div class="cmd-row">
 <button type="button" onclick="clearLog()">Clear Log</button>
+<button type="button" onclick="downloadLog()">Download</button>
 <label for="debugLevel">Debug level:</label>
 <input type="range" id="debugLevel" min="0" max="2" step="1" value="%DEBUG_LEVEL%"
 oninput="document.getElementById('debugLevelValue').textContent=this.value"
