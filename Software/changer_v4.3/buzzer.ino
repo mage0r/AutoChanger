@@ -9,7 +9,7 @@ void setup_buzzer() {
 // BUZZER_ENABLE command, the OLED's buzzer page, and the web UI.
 void setBuzzerEnabled(boolean enabled) {
   BUZZER = enabled;
-  save_config(SPIFFS, "/config.ini");
+  save_config(LittleFS, "/config.ini");
 }
 
 // Sets the buzzer's tone frequency (Hz) and saves it - same three callers as above.
@@ -22,7 +22,7 @@ void setBuzzerFrequency(double freq) {
   if(freq > 5000)
     freq = 5000;
   buzzerNote = freq;
-  save_config(SPIFFS, "/config.ini");
+  save_config(LittleFS, "/config.ini");
 }
 
 void check_tone() {

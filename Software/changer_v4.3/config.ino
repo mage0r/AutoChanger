@@ -1,5 +1,5 @@
 void setup_config() {
-  // load the config from the config.ini file on the SPIFFS file system.
+  // load the config from the config.ini file on the LittleFS file system.
   // if the file doesn't exist, load defaults.
   // There's no reason not to add your own options.
 
@@ -39,15 +39,15 @@ void load_config(fs::FS &fs, const char * path) {
   if(!file || file.isDirectory()){
       weblog.println(F("- failed to open file for reading"));
       weblog.println(F("Creating Default Configuration."));
-      save_config(SPIFFS, path);
-      save_html(SPIFFS, "/index.html", index_html);
-      save_html(SPIFFS, "/autochanger.svg", autochanger_svg);
-      save_html(SPIFFS, "/manage.html", manager_html);
-      save_html(SPIFFS, "/ok.html", ok_html);
-      save_html(SPIFFS, "/edit.html", edit_html);
-      save_html(SPIFFS, "/failed.html", failed_html);
-      save_html(SPIFFS, "/join.html", wifi_join_html);
-      save_html(SPIFFS, "/joining.html", wifi_joining_html);
+      save_config(LittleFS, path);
+      save_html(LittleFS, "/index.html", index_html);
+      save_html(LittleFS, "/autochanger.svg", autochanger_svg);
+      save_html(LittleFS, "/manage.html", manager_html);
+      save_html(LittleFS, "/ok.html", ok_html);
+      save_html(LittleFS, "/edit.html", edit_html);
+      save_html(LittleFS, "/failed.html", failed_html);
+      save_html(LittleFS, "/join.html", wifi_join_html);
+      save_html(LittleFS, "/joining.html", wifi_joining_html);
       return;
   } else {
     weblog.println(F(" - Success!"));
@@ -93,7 +93,7 @@ void load_config(fs::FS &fs, const char * path) {
 
   if(save) {
     weblog.println(F("Updating Wifi Password."));
-    save_config(SPIFFS, path);
+    save_config(LittleFS, path);
     save = false;
   }
 }
@@ -144,15 +144,8 @@ void assign_config(String name, String value) {
 
 // We use this function to effectively create a default
 // config.ini file.
+// Written via SafeFile (safefile.h): a power cut mid-save leaves the previous file.
 void save_config(fs::FS &fs, const char * path) {
-
-  //fs.remove(path);
-  File file = fs.open(path, FILE_WRITE);
-  if(!file){
-      weblog.println(F("Write failed"));
-      return;
-  }
-  
   String temp_message = "";
   temp_message += "ssid="+ssid+"\n";
   temp_message += "wifi_password="+encryptXorBase64(wifi_password)+"\n";
@@ -170,24 +163,19 @@ void save_config(fs::FS &fs, const char * path) {
   temp_message += "buzzer_enabled="+(String)BUZZER+"\n";
   temp_message += "buzzer_note="+(String)buzzerNote+"\n";
 
-  file.print(temp_message);
-  file.close();
-
+  if(!SafeFile::write(fs, path, temp_message))
+    weblog.println(F("Saving config FAILED"));
 }
 
 void save_html(fs::FS &fs, const char *path, const char *html) {
-  // If index.html doesn't exist, create it
-  File file = fs.open(path);
-  if(!file  || file.isDirectory()) {
-    file.close();
-    weblog.print("Default ");
-    weblog.print(path);
-    weblog.println(" does not exist, creating.");
-    file = fs.open(path, FILE_WRITE);
-    file.print(html);
-  }
-
-  file.close();
+  // only if it doesn't exist yet - exists() rather than a test open(), which logs an
+  // error for a missing file on LittleFS
+  if(fs.exists(path))
+    return;
+  weblog.print("Default ");
+  weblog.print(path);
+  weblog.println(" does not exist, creating.");
+  SafeFile::write(fs, path, html, strlen(html));
 }
 
 String decryptXorBase64(const String &stored) {

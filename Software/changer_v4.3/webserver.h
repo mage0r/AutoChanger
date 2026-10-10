@@ -2,15 +2,17 @@
 // Also, all the variables we need created
 
 #include <WiFi.h>
-#include <ESPAsyncWebSrv.h>
+// ESP32Async/AsyncTCP + ESP32Async/ESPAsyncWebServer - the maintained versions
+// (Library Manager: "Async TCP" and "ESP Async WebServer", both by ESP32Async).
 #include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
 #include <Update.h>
 #include "FS.h"
-#include "SPIFFS.h"
+#include <LittleFS.h>
+#include "safefile.h"
 #include <WiFiAP.h>
 #include <ArduinoOTA.h>
-#include <SPIFFSEditor.h>
 #include "base64.hpp"
 
 String ssid;
@@ -42,7 +44,7 @@ unsigned long wifi_counter = 0; // keep trying the wifi for 2 minutes
 
 // Optimized HTML templates with better compression
 const char manager_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML><html><head><title>ESP32 SPIFFS Manager</title>
+<!DOCTYPE HTML><html><head><title>ESP32 LittleFS Manager</title>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 body{background:#f7f7f7;font-family:Arial,sans-serif}
@@ -63,13 +65,13 @@ if(!f[0].name.endsWith('.bin')){alert("Wrong file type!");return false}
 function validateUpload(){
 if(!document.getElementById('upload_data').files.length){alert("Choose a file!");return false}
 }
-function confirmFormat(){return confirm("Delete all SPIFFS data and restart?")}
+function confirmFormat(){return confirm("Delete all LittleFS data and restart?")}
 </script></head><body><center>
 <h2>ESP32 Manager</h2>
 <a href="https://github.com/mage0r/AutoChanger">github.com/mage0r/AutoChanger</a>
 <fieldset><legend>System</legend>
-<table><tr><th>SPIFFS</th><th>ESP32 Status</th></tr><tr>
-<td>Total: %SPIFFS_TOTAL_BYTES%<br>Used: %SPIFFS_USED_BYTES%<br>Free: %SPIFFS_FREE_BYTES%</td>
+<table><tr><th>LittleFS</th><th>ESP32 Status</th></tr><tr>
+<td>Total: %FS_TOTAL_BYTES%<br>Used: %FS_USED_BYTES%<br>Free: %FS_FREE_BYTES%</td>
 <td>Project: %PROJECT% - %VERSION%<br>Build: %BUILDDATE% %BUILDTIME%<br>IP: %IPADDRESS%<br>
 Chip: %CHIPMODEL%<br>Flash: %FLASHSIZE%<br>Sketch: %SKETCHSIZE% used, %FREESKETCHSPACE% free<br>
 RAM: %GETFREEHEAP% / %GETTOTALHEAP%<br>PSRAM: %GETFREEPSRAM% / %GETTOTALPSRAM%</td>
@@ -83,7 +85,7 @@ RAM: %GETFREEHEAP% / %GETTOTALHEAP%<br>PSRAM: %GETFREEPSRAM% / %GETTOTALPSRAM%</
 <input type="file" id="upload_data" name="upload_data">
 <input type="submit" value="Upload" onclick="return validateUpload()" class="btn">
 </form></fieldset>
-<fieldset><legend>Format SPIFFS</legend>
+<fieldset><legend>Format LittleFS</legend>
 <form method="POST" action="/format">
 <span class="warn">Deletes all data!</span>
 <input type="submit" value="Format" onclick="return confirmFormat()" class="btn">
@@ -129,14 +131,14 @@ const char ok_html[] PROGMEM = R"rawliteral(
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{background:#f7f7f7;text-align:center;font-family:Arial,sans-serif}</style>
 </head><body><h2>Update successful!</h2>
-<button onclick="location.href='/manage'">Return</button></body></html>)rawliteral";
+<button onclick="location.href='/#status'">Return</button></body></html>)rawliteral";
 
 const char failed_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head><title>Failed</title>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{background:#f7f7f7;text-align:center;font-family:Arial,sans-serif}</style>
 </head><body><h2>Update failed!</h2>
-<button onclick="location.href='/manage'">Return</button></body></html>)rawliteral";
+<button onclick="location.href='/#status'">Return</button></body></html>)rawliteral";
 
 const char autochanger_svg[] PROGMEM = R"rawliteral(<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1283.081787 521.068726 166.163574 157.862610">
 <style>
@@ -192,11 +194,11 @@ const char autochanger_svg[] PROGMEM = R"rawliteral(<svg xmlns="http://www.w3.or
 // Shown as the default page only while the unit is running as its own access point
 // (i.e. no WiFi configured yet, or it couldn't reach what was configured). Like the
 // rest of the pages, this is just the seed content - save_html() below writes it to
-// SPIFFS once, and it's served and editable (via /manage) from there after that. The
-// trade-off versus keeping this one self-contained in PROGMEM: if SPIFFS or this
+// LittleFS once, and it's served and editable (via /manage) from there after that. The
+// trade-off versus keeping this one self-contained in PROGMEM: if LittleFS or this
 // specific file is ever missing/corrupted AT THE SAME TIME the unit can't reach WiFi,
 // this recovery page won't load either - FIX (serial command or the file list below)
-// recreates it, but only if SPIFFS itself is still mountable.
+// recreates it, but only if LittleFS itself is still mountable.
 const char wifi_join_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head><title>AutoChanger - Join WiFi</title>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -284,6 +286,11 @@ function pickNetwork() {
 function setScanStatus(text) {
   document.getElementById('scanStatus').textContent = text;
 }
+// Show the networks the unit scanned just before starting this hotspot, if it has
+// them - no waiting, and no scan started just because the page opened.
+fetch('/scan?cached=1').then(function(r) { return r.json(); }).then(function(data) {
+  if (data.status === 'done') showNetworks(data.networks);
+}).catch(function() {});
 </script>
 </body></html>)rawliteral";
 
@@ -332,7 +339,9 @@ padding:8px;margin:6px 0;border:1px solid #ccc;border-radius:4px;box-sizing:bord
 #tab-status .btn{padding:8px 16px;cursor:pointer;margin-top:8px}
 #tab-status .note{color:#666;font-size:13px}
 #tab-status label{font-size:14px;color:#444}
-#tab-status input[type=password]{display:block;width:100%;padding:8px;margin:6px 0;
+#tab-status .pw-form{display:flex;flex-direction:column}
+#tab-status .pw-form .btn{align-self:flex-start}
+#tab-status input[type=password]{padding:8px;margin:6px 0;
 border:1px solid #ccc;border-radius:4px;box-sizing:border-box}
 .toggle-row{display:flex;align-items:center;gap:12px;margin-top:8px}
 .toggle-switch{position:relative;display:inline-block;width:50px;height:26px;flex-shrink:0}
@@ -357,8 +366,8 @@ background-color:white;transition:.2s;border-radius:10px;box-shadow:0 1px 2px rg
 #tab-log button{padding:6px 14px;cursor:pointer;margin-bottom:8px}
 #tab-log pre{background:#1e1e1e;color:#d4d4d4;font-family:monospace;font-size:13px;
 padding:10px;border-radius:4px;height:400px;overflow-y:auto;white-space:pre-wrap;
-word-break:break-all;margin:0;box-sizing:border-box;width:100%}
-#tab-log .cmd-row{display:flex;gap:8px;margin-top:10px;width:100%;box-sizing:border-box}
+word-break:break-all;margin:0;box-sizing:border-box}
+#tab-log .cmd-row{display:flex;gap:8px;margin-top:10px;box-sizing:border-box}
 #tab-log .cmd-row input{flex:1;padding:8px;border:1px solid #ccc;border-radius:4px;
 font-family:monospace;box-sizing:border-box}
 #tab-log .cmd-row button{margin-bottom:0}
@@ -922,7 +931,7 @@ autocapitalize="off" autocorrect="off" spellcheck="false">
 <button type="button" class="btn" onclick="joinWifi()">Join</button>
 <p class="note" id="joinStatus"></p>
 </fieldset>
-<p class="note">Changing networks needs the admin login (same one Manage files uses) -
+<p class="note">Changing networks needs the admin login (set on the System tab) -
 you'll be asked the first time.</p>
 
 <fieldset><legend>Disable WiFi</legend>
@@ -949,8 +958,8 @@ against this one, reusing the same interpreter as Serial. Status:
 autocapitalize="off" autocorrect="off" spellcheck="false">
 <button type="button" class="btn" id="i2cAddrSaveBtn" style="display:inline-block;width:auto" onclick="saveI2CAddress()">Save Address</button>
 </fieldset>
-<p class="note">Saving, enabling or disabling needs the admin login (same one Manage files
-uses) - you'll be asked the first time.</p>
+<p class="note">Saving, enabling or disabling needs the admin login (set on the System
+tab) - you'll be asked the first time.</p>
 
 <fieldset><legend>Enable / Disable I2C</legend>
 <div class="toggle-row">
@@ -1012,7 +1021,7 @@ as the unit's own arm-adjust menu.</p>
 <button type="button" onclick="testArm(3)">Test</button>
 </div>
 </fieldset>
-<p class="note">Saving needs the admin login (same one Manage files uses) - you'll be
+<p class="note">Saving needs the admin login (set on the System tab) - you'll be
 asked the first time. Test just moves the arm - no login needed.</p>
 
 <fieldset><legend>Enable / Disable Sensor</legend>
@@ -1060,7 +1069,7 @@ onchange="setDebugLevel(this.value)">
 <span id="debugLevelValue">%DEBUG_LEVEL%</span>
 </div>
 <p class="note">0 = off, 1 = normal, 2 = verbose (timestamps every log line) - needs the
-admin login (same one Manage files uses).</p>
+admin login (set on the System tab).</p>
 <pre id="logContent"></pre>
 <div class="cmd-row">
 <input type="text" id="cmdInput" placeholder="Command, e.g. INFO"
@@ -1068,14 +1077,14 @@ autocapitalize="off" autocorrect="off" spellcheck="false"
 onkeydown="if(event.key==='Enter') sendCommand();">
 <button type="button" onclick="sendCommand()">Send</button>
 </div>
-<p class="note">Sending a command needs the admin login (same one Manage files uses) -
+<p class="note">Sending a command needs the admin login (set on the System tab) -
 you'll be asked the first time.</p>
 </div>
 
 <div class="tab-panel hidden" id="tab-status">
 <fieldset><legend>System Status</legend>
-<table><tr><th>SPIFFS</th><th>ESP32 Status</th></tr><tr>
-<td>Total: %SPIFFS_TOTAL_BYTES%<br>Used: %SPIFFS_USED_BYTES%<br>Free: %SPIFFS_FREE_BYTES%</td>
+<table><tr><th>LittleFS</th><th>ESP32 Status</th></tr><tr>
+<td>Total: %FS_TOTAL_BYTES%<br>Used: %FS_USED_BYTES%<br>Free: %FS_FREE_BYTES%</td>
 <td>Project: %PROJECT% - %VERSION%<br>Build: %BUILDDATE% %BUILDTIME%<br>IP: %IPADDRESS%<br>
 Chip: %CHIPMODEL%<br>Flash: %FLASHSIZE%<br>Sketch: %SKETCHSIZE% used, %FREESKETCHSPACE% free<br>
 RAM: %GETFREEHEAP% / %GETTOTALHEAP%<br>PSRAM: %GETFREEPSRAM% / %GETTOTALPSRAM%</td>
@@ -1099,7 +1108,7 @@ RAM: %GETFREEHEAP% / %GETTOTALHEAP%<br>PSRAM: %GETFREEPSRAM% / %GETTOTALPSRAM%</
 </fieldset>
 
 <fieldset><legend>Web Password</legend>
-<form method="POST" action="/password" onsubmit="return validatePassword()">
+<form method="POST" action="/password" class="pw-form" onsubmit="return validatePassword()">
 <label for="currentPassword">Current password</label>
 <input type="password" id="currentPassword" name="current" autocomplete="current-password" required>
 <label for="newPassword">New password</label>
@@ -1109,11 +1118,11 @@ RAM: %GETFREEHEAP% / %GETTOTALHEAP%<br>PSRAM: %GETFREEPSRAM% / %GETTOTALPSRAM%</
 <input type="submit" value="Change password" class="btn">
 </form>
 <p class="note">Out of the box the login is username <b>admin</b>, password <b>admin</b> - change it before putting the unit on a shared network.</p>
-<p class="note">Used for settings, file management, firmware updates, backups and uploads from the Arduino IDE. 4 to 64 characters: letters, numbers, spaces and standard punctuation. After changing it your browser will ask you to log in again.</p>
+<p class="note">Used for settings, firmware updates, backups and uploads from the Arduino IDE. 4 to 64 characters: letters, numbers, spaces and standard punctuation. After changing it your browser will ask you to log in again.</p>
 </fieldset>
 </div>
 
-<p><a href="/manage">Manage files</a> &middot; <a href="https://github.com/mage0r/AutoChanger">github.com/mage0r/AutoChanger</a></p>
+<p><a href="https://github.com/mage0r/AutoChanger">github.com/mage0r/AutoChanger</a></p>
 </body></html>)rawliteral";
 
 // Every page the firmware owns, and its built-in content. Used by FIX (restores any

@@ -39,7 +39,11 @@ void checkButtons() {
     if(debouncer[i].fell()) {
       buttonState[i] = 1;
       buttonExec[i] = true;
+      buttonLongFired[i] = false;
     } else if(debouncer[i].rose()) {
+      if(!buttonLongFired[i])
+        buttonShort[i] = true; // released before the long press fired
+      buttonLongFired[i] = false;
       buttonState[i] = 0;
       buttonExec[i] = false;
     }
@@ -57,6 +61,7 @@ void checkButtons() {
         check = i+1;
         
         buttonState[i] = 0;
+        buttonLongFired[i] = true; // so the release isn't also taken as a short press
         
       }
     }
@@ -93,17 +98,10 @@ void checkButtons() {
       // entering the arm-adjust page - show the LOW position right away.
       syncArmServo();
     } else if(menu_page == 7) {
-      // wrap back round to the main page.
-      for (int x = 0; x < 4; x++) {
-        moveServo(x,0); // put all the arms back down - they may have been left up/mid-adjust on the arm-adjust page.
-      }
-      if(patterns[currentPattern].length) {
-        servonum = 1; // step index of the first entry
-        moveServo(patterns[currentPattern].steps[0] - '0', 1); // raise the arm that first entry actually points to
-      } else {
-        servonum = -1; // empty pattern - loading state
-      }
+      // wrap back round to the main page. change_program() puts every arm down (they
+      // may have been left up/mid-adjust on the arm-adjust page) and raises step 1's.
       menu_page = 0;
+      change_program(currentPattern);
     }
   }
 
@@ -124,7 +122,9 @@ void checkButtons() {
   else if(menu_page == 6)
     buzzerPageMode();
 
- 
+  // short presses are only ever consumed on the page they happened on
+  for(int i = 0; i < 4; i++)
+    buttonShort[i] = false;
 
 }
 
@@ -132,8 +132,8 @@ void checkButtons() {
 // (TEST). menu_position is even while browsing between fields (LOW=0, HIGH=2, EJECT=4, TEST=6) and
 // odd while editing the highlighted field's value. A short press on the program button toggles
 // between the two; rotating the encoder while editing adjusts the value via changeValues() (see
-// changer_encoder.ino). Confirming the TEST edit (pressing again from position 7) also runs
-// testCycle() immediately.
+// changer_encoder.ino). On TEST, the first press edits the cycle count and the second saves it
+// and runs the test on the selected arm.
 void armAdjustMode() {
 
   // A single press of a number button switches which arm we're adjusting - no long press needed here.
@@ -154,17 +154,14 @@ void armAdjustMode() {
     } else if(menu_position == 4) {
       menu_position++;
     } else if (menu_position == 6) {
-      // execute the testCycle.
-      //testCycleArm(currentPattern, test_run); // TEST: confirming the count runs it right away.
-      servoTestArm = currentPattern;
-      servoTestPending = true;
+      menu_position++; // edit the test cycle count
     } else {
       // confirm the edit and persist it.
       if(menu_position == 1 || menu_position == 3 || menu_position == 5) {
-        save_servos(SPIFFS, "/servos.txt");
+        save_servos(LittleFS, "/servos.txt");
       } else {
-        save_config(SPIFFS, "/config.ini"); // was "/config.txt" - load_config() never reads that file, so this never actually persisted
-        
+        save_config(LittleFS, "/config.ini");
+        startArmTest(currentPattern, false); // TEST: confirming the count runs it
       }
       menu_position--;
       if(DEBUG)
@@ -206,7 +203,7 @@ void sensorPageMode() {
       menu_position = 2;
     } else {
       // confirm and persist the debounce edit.
-      save_config(SPIFFS, "/config.ini");
+      save_config(LittleFS, "/config.ini");
       menu_position = 1;
       if(DEBUG)
         weblog.println(F("Debounce saved."));
@@ -226,7 +223,7 @@ void buzzerPageMode() {
     } else if(menu_position == 1) {
       menu_position = 2;
     } else {
-      save_config(SPIFFS, "/config.ini");
+      save_config(LittleFS, "/config.ini");
       menu_position = 1;
       if(DEBUG)
         weblog.println(F("Buzzer frequency saved."));
@@ -247,7 +244,6 @@ void change_program(byte new_program) {
   }
 
   currentPattern = new_program;
-  //servonum = 1;
 
   if( patterns[currentPattern].length) {
     // not an empty pattern
@@ -275,24 +271,23 @@ void programMode() {
     // reset the current pattern to the default.
     if(pgrmExec) {
       RestoreDefault(currentPattern);
-      save_patterns(SPIFFS, "/patterns.txt");
+      save_patterns(LittleFS, "/patterns.txt");
     }
   } else if (menu_position == 1) {
     // This is the NEW
     // wipes out the entire array for this program
     if(pgrmExec) {
       wipe_pattern(currentPattern);
-      save_patterns(SPIFFS, "/patterns.txt");
+      save_patterns(LittleFS, "/patterns.txt");
     }
   } else if (menu_position == 2) {
     // This is the SAVE
     // write out the current pattern and drop back to the main page.
     if(pgrmExec) {
-      save_patterns(SPIFFS, "/patterns.txt");
-      // servonum is a STEP INDEX into patterns[currentPattern].steps, not the arm value stored there.
-      servonum = patterns[currentPattern].length ? 1 : -1; // first step if we have one, else the empty/loading state
+      save_patterns(LittleFS, "/patterns.txt");
       menu_position = 0; // reset the cursor so next time we enter program mode it starts at RES
       menu_page = 0;
+      change_program(currentPattern); // arms down, step 1's arm up - matching what the screen shows
       if(DEBUG)
         weblog.println(F("Saved. Exiting Program Mode."));
     }
@@ -331,27 +326,11 @@ void programMode() {
 // This is the stupidest name.
 void page_0() {
 
+  // Acts once per short press (on release) - see buttonShort[] in button.h. Same
+  // behaviour as webPressButton() below.
   for (int x = 0; x < 4; x++) {
-    if (!patterns[currentPattern].length) {
-      // This is a special case.  If there are no entries in a pattern
-      // it should be the loading pattern.
-      if(buttonState[x] && millis() - btnTimeStamps[x] > 1000) {
-          if(servonum == x ) {
-            servonum = -1;
-            moveServo(x,0); // move down.
-            btnTimeStamps[x] = millis();
-          } else {
-            moveServo(x,1); // move up
-            servonum = x;
-            btnTimeStamps[x] = millis();
-          }
-        }
-    }
-    else if ((patterns[currentPattern].steps[servonum-1] - '0') == x && buttonState[x]) {
-      // if you've pressed the active rod, this will rotate it.
-      switchRods();
-    }
-    
+    if(buttonShort[x])
+      webPressButton(x);
   }
 }
 
@@ -371,8 +350,11 @@ void webPressButton(int x) {
       moveServo(x, 1);
       servonum = x;
     }
-  } else if((patterns[currentPattern].steps[servonum-1] - '0') == x) {
-    // pressed the currently active rod - advance to the next step.
-    switchRods();
+  } else {
+    normalize_servonum();
+    if((patterns[currentPattern].steps[servonum-1] - '0') == x) {
+      // pressed the currently active rod - advance to the next step.
+      switchRods();
+    }
   }
 }

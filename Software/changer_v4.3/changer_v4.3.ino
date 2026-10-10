@@ -18,7 +18,7 @@
 
 // Set our version number.  Don't forget to update when featureset changes
 #define PROJECT "AutoChanger"
-#define VERSION "V.4.2.11"
+#define VERSION "V.4.3.2"
 
 #include <Wire.h>
 #include <Bounce2.h>
@@ -131,7 +131,6 @@ boolean i2c_enabled = false; // persisted in config.ini - see I2C_ENABLE in comm
 boolean sensor_enabled = true; // persisted in config.ini - see SENSOR_ENABLE in commands.ino
 uint8_t i2c2_address = I2C2_ADDRESS_DEFAULT; // persisted in config.ini - 7-bit address, 0x08-0x77
 
-#define FORMAT_SPIFFS_IF_FAILED true
 
 // The colour changer only uses 4 servos.
 // content for this array is loaded from eeprom
@@ -206,7 +205,7 @@ void setup() {
 
   // Chip/flash identity - compare "Flash Size" against whatever the Arduino IDE's
   // Tools > Flash Size is set to. A mismatch there (not in this code) is the usual
-  // cause of a wrong/too-small SPIFFS partition.
+  // cause of a wrong/too-small LittleFS partition.
   weblog.print(F("Chip Model: "));
   weblog.print(ESP.getChipModel());
   weblog.print(F(" rev"));
@@ -225,16 +224,19 @@ void setup() {
   // I can't explain this, but if the display is set up after the servos it all falls apart
   setup_display();
 
-  if(!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)) {
-    weblog.println(F("SPIFFS mount failed!"));
+  // mounts LittleFS, carrying files across from a pre-4.3 LittleFS filesystem if
+  // that's what's on the partition - see filesystem.ino
+  if(!mount_filesystem()) {
+    weblog.println(F("Filesystem mount failed!"));
     return;
   } else {
-    weblog.print(F("SPIFFS Total: "));
-    weblog.print(SPIFFS.totalBytes() / 1024);
+    weblog.print(F("LittleFS Total: "));
+    weblog.print(LittleFS.totalBytes() / 1024);
     weblog.print(F(" KB, Used: "));
-    weblog.print(SPIFFS.usedBytes() / 1024);
+    weblog.print(LittleFS.usedBytes() / 1024);
     weblog.println(F(" KB"));
-    load_config(SPIFFS, "/config.ini");
+    load_config(LittleFS, "/config.ini");
+    create_missing_pages();
     log_page_status();
   }
 
@@ -294,13 +296,19 @@ void loop() {
   // but skipping it entirely would leave a stale true sitting there, ready to fire
   // a phantom move the instant the sensor is re-enabled even though it hasn't
   // actually passed since.
+  // Only acted on from the main page (menu_page 0) - on every other page the arms
+  // are being programmed, calibrated or left alone, and a carriage pass would
+  // otherwise switch them underneath you.
   if(armTrigger) {
-    if(sensor_enabled) {
+    if(sensor_enabled && menu_page == 0) {
       operateArm();
     } else {
       armTrigger = false;
     }
   }
+
+  run_web_actions(); // anything the web UI asked for since the last pass - see webactions.ino
+  captive_portal_loop(); // hotspot mode: point every DNS lookup at us - see wifi.ino
 
   if(pagesFixPending) {
     pagesFixPending = false;
@@ -345,7 +353,7 @@ void loop() {
       }
     }
     if(updateCount)
-      save_servos(SPIFFS, "/servos.txt");
+      save_servos(LittleFS, "/servos.txt");
   }
 
   if (runEvery(1000, &run1000)) {
@@ -355,8 +363,8 @@ void loop() {
         setup_wifi();
       } else {
         // We've tried to hit the pre-configured wifi for 30 seconds.
-        // time to give up and be our own host.
-        setup_AP();
+        // time to give up and be our own host (after a quick scan - see wifi.ino).
+        start_hotspot();
       }
     }
   }

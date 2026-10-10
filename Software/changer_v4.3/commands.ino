@@ -27,7 +27,7 @@ String currentCommandLine = ""; // the raw line currently being processed, for c
 // serve two transports. It's pointed at &Serial normally; readI2CCommands() in i2c.ino
 // points it at a small in-RAM buffer for the duration of one command, so that command's
 // output lands there instead of going out over USB, then puts it back afterwards.
-Print *cmdOut = &weblog; // weblog tees to the real Serial too - see changer_v4_2.ino
+Print *cmdOut = &weblog; // weblog tees to the real Serial too - see changer_v4.3.ino
 
 // True for the duration of a command dispatched from a transport whose messages are
 // single, bounded, one-shot requests rather than a continuous byte stream - I2C (see
@@ -63,8 +63,8 @@ const CommandHelp commandTable[] = {
   {"TEST <arm 0-3>|ALL", "Runs the configured test cycle count on one arm, or all four sequentially. Starts the sequence and returns immediately - loop() carries it out, same as the web UI's own Test button."},
   {"BUZZER_ENABLE ON|OFF", "Turns the arm-switch beep on or off and saves the setting."},
   {"BUZZER_FREQ <hz>", "Sets the beep's tone frequency (100-5000 Hz) and saves the setting."},
-  {"INFO", "Shows project/build info, IP, chip model/revision, flash size, sketch size/free space, RAM, PSRAM, and SPIFFS usage."},
-  {"LS", "Lists files in SPIFFS with their sizes."},
+  {"INFO", "Shows project/build info, IP, chip model/revision, flash size, sketch size/free space, RAM, PSRAM, and LittleFS usage."},
+  {"LS", "Lists files in LittleFS with their sizes."},
   {"CAT <filename>", "Prints a file's contents."},
   {"PUT <filename> <size>", "Writes a file - exactly <size> raw bytes must follow this line immediately. Used by the deploy tool to restore a backup."},
   {"RM <filename>", "Deletes a file. No confirmation - this is permanent."},
@@ -102,9 +102,9 @@ void readSerialCommands() {
       putBytesRemaining--;
       if(putBytesRemaining == 0) {
         putFile.close();
-        if(SPIFFS.exists(putTargetPath))
-          SPIFFS.remove(putTargetPath);
-        SPIFFS.rename(putTempPath, putTargetPath);
+        if(LittleFS.exists(putTargetPath))
+          LittleFS.remove(putTargetPath);
+        LittleFS.rename(putTempPath, putTargetPath);
         currentCommandLine = putEchoLine;
         commandOK();
       }
@@ -187,6 +187,7 @@ void processCommand(String cmd) {
   }
 }
 
+// HELP - prints every command (helpText above).
 void cmd_help() {
   for(byte i = 0; i < commandTableSize; i++) {
     cmdOut->print(commandTable[i].syntax);
@@ -237,6 +238,7 @@ void cmd_wifiEnable(String args) {
   commandOK();
 }
 
+// I2C_ENABLE ON|OFF
 void cmd_i2cEnable(String args) {
   args.trim();
   args.toUpperCase();
@@ -305,19 +307,19 @@ void cmd_info() {
   cmdOut->print(F(" / "));
   cmdOut->println(convertFileSize(ESP.getPsramSize()));
 
-  cmdOut->print(F("SPIFFS: Total "));
-  cmdOut->print(convertFileSize(SPIFFS.totalBytes()));
+  cmdOut->print(F("LittleFS: Total "));
+  cmdOut->print(convertFileSize(LittleFS.totalBytes()));
   cmdOut->print(F(", Used "));
-  cmdOut->print(convertFileSize(SPIFFS.usedBytes()));
+  cmdOut->print(convertFileSize(LittleFS.usedBytes()));
   cmdOut->print(F(", Free "));
-  cmdOut->println(convertFileSize(SPIFFS.totalBytes() - SPIFFS.usedBytes()));
+  cmdOut->println(convertFileSize(LittleFS.totalBytes() - LittleFS.usedBytes()));
 
   commandOK();
 }
 
-// LS - lists every file in SPIFFS (flat filesystem, no real directories) with its size.
+// LS - lists every file in the filesystem root with its size.
 void cmd_ls() {
-  File root = SPIFFS.open("/");
+  File root = LittleFS.open("/");
   File file = root.openNextFile();
   while(file) {
     cmdOut->print(file.name());
@@ -367,7 +369,7 @@ void cmd_put(String args) {
   putTargetPath = path;
   putTempPath = path + ".tmp";
 
-  putFile = SPIFFS.open(putTempPath, FILE_WRITE);
+  putFile = LittleFS.open(putTempPath, FILE_WRITE);
   if(!putFile) {
     commandError(F("could not open file for writing"));
     return;
@@ -379,9 +381,9 @@ void cmd_put(String args) {
     // counts DOWN to zero; it would never fire if it started there, so an empty
     // file needs to be handled here instead, not left to that loop.
     putFile.close();
-    if(SPIFFS.exists(putTargetPath))
-      SPIFFS.remove(putTargetPath);
-    SPIFFS.rename(putTempPath, putTargetPath);
+    if(LittleFS.exists(putTargetPath))
+      LittleFS.remove(putTargetPath);
+    LittleFS.rename(putTempPath, putTargetPath);
     commandOK();
     return;
   }
@@ -404,7 +406,7 @@ void cmd_cat(String args) {
   if(!path.startsWith("/"))
     path = "/" + path;
 
-  File file = SPIFFS.open(path);
+  File file = LittleFS.open(path);
   if(!file || file.isDirectory()) {
     commandError(F("file not found"));
     return;
@@ -431,18 +433,15 @@ void cmd_rm(String args) {
   if(!path.startsWith("/"))
     path = "/" + path;
 
-  if(SPIFFS.remove(path)) {
+  if(LittleFS.remove(path)) {
     commandOK();
   } else {
     commandError(F("file not found or could not be removed"));
   }
 }
 
-// FIX - restores any missing default files. Checks each one first so existing files (your
-// actual patterns, servo positions, config, or any HTML you've customised) are never touched -
-// only genuinely missing files get recreated.
 // REBOOT - sends OK first (and makes sure it's actually out over the wire) so the
-// caller gets confirmation before the connection drops, then restarts immediately.
+// caller gets confirmation before the connection drops, then restarts.
 void cmd_reboot() {
   commandOK();
   Serial.flush();
@@ -450,8 +449,6 @@ void cmd_reboot() {
   ESP.restart();
 }
 
-// EJECT_ALL - moves every arm to its EJECT position (servos[x][2]), the same
-// position TEST/EJECT on the arm-adjust menu moves the selected arm to.
 // SENSOR_ENABLE ON|OFF
 void cmd_sensorEnable(String args) {
   args.trim();
@@ -536,6 +533,8 @@ void cmd_buzzerFreq(String args) {
   commandOK();
 }
 
+// EJECT_ALL - moves every arm to its EJECT position (servos[x][2]), the same
+// position TEST/EJECT on the arm-adjust menu moves the selected arm to.
 void cmd_ejectAll() {
   for(int x = 0; x < maxServo; x++) {
     moveServo(x, 2);
@@ -609,6 +608,7 @@ void cmd_setPatternCmd(int n, String steps) {
   commandOK();
 }
 
+// DEBUG 0|1|2 - log verbosity.
 void cmd_setDebug(String args) {
   args.trim();
   int level = args.toInt();
@@ -617,42 +617,45 @@ void cmd_setDebug(String args) {
     return;
   }
   DEBUG = constrain(level, 0, 10);
-  save_config(SPIFFS, "/config.ini");
+  save_config(LittleFS, "/config.ini");
   commandOK();
 }
 
+// FIX - restores any missing default files. Checks each one first so existing files (your
+// actual patterns, servo positions, config, or any HTML you've customised) are never touched -
+// only genuinely missing files get recreated.
 void cmd_fix() {
   byte restored = 0;
 
-  if(!SPIFFS.exists("/config.ini")) {
-    save_config(SPIFFS, "/config.ini");
+  if(!LittleFS.exists("/config.ini")) {
+    save_config(LittleFS, "/config.ini");
     cmdOut->println(F("Restored /config.ini"));
     restored++;
   }
 
-  if(!SPIFFS.exists("/patterns.txt")) {
+  if(!LittleFS.exists("/patterns.txt")) {
     RestoreDefault(0);
     RestoreDefault(1);
     RestoreDefault(2);
     RestoreDefault(3);
-    save_patterns(SPIFFS, "/patterns.txt");
+    save_patterns(LittleFS, "/patterns.txt");
     cmdOut->println(F("Restored /patterns.txt"));
     restored++;
   }
 
-  if(!SPIFFS.exists("/servos.txt")) {
+  if(!LittleFS.exists("/servos.txt")) {
     default_servos(); // sets defaults, moves arms to eject, and saves
     cmdOut->println(F("Restored /servos.txt"));
     restored++;
   }
 
   for(byte i = 0; i < DEFAULT_PAGE_COUNT; i++) {
-    if(!SPIFFS.exists(defaultPagePaths[i])) {
+    if(!LittleFS.exists(defaultPagePaths[i])) {
       cmdOut->print(F("Restored "));
       cmdOut->println(defaultPagePaths[i]);
       restored++;
     }
-    save_html(SPIFFS, defaultPagePaths[i], defaultPageContent[i]); // no-op if it already exists
+    save_html(LittleFS, defaultPagePaths[i], defaultPageContent[i]); // no-op if it already exists
   }
 
   if(restored == 0) {

@@ -5,13 +5,13 @@
 // Turns automatic response to the arm sensor on or off and saves the setting - used
 // by the serial SENSOR_ENABLE command, the OLED's sensor page, and (indirectly)
 // nothing else yet. The sensor itself keeps firing either way; see the gating
-// comment in changer_v4_2.ino's loop() for what actually changes. Mainly useful
+// comment in changer_v4.3.ino's loop() for what actually changes. Mainly useful
 // alongside the AYAB-facing S/R/L commands (commands.ino) - AYAB driving arms
 // directly and the automatic sequence both reacting to every carriage pass would
 // fight each other.
 void setSensorEnabled(boolean enabled) {
   sensor_enabled = enabled;
-  save_config(SPIFFS, "/config.ini");
+  save_config(LittleFS, "/config.ini");
 }
 
 void operateArm() {
@@ -54,7 +54,7 @@ void syncArmServo() {
 
 // Starts (or restarts) a non-blocking test sequence - one arm, or all four in
 // sequence - for loop() to carry out over the following seconds (see the
-// servoTestPending check in changer_v4_2.ino and testCycleArm() below). Used by
+// servoTestPending check in changer_v4.3.ino and testCycleArm() below). Used by
 // the web UI's /servo_test and /servo_test_all, and the serial TEST command.
 // Explicitly resets armTestCount and armTestAll rather than trusting whatever
 // they were last left at: armTestCount only gets reset by testCycleArm() itself

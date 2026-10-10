@@ -10,7 +10,7 @@
   
   pwm.setPWMFreq(60);  // Analog servos run at ~60 Hz updates
 
-  load_servos(SPIFFS, "/servos.txt");
+  load_servos(LittleFS, "/servos.txt");
 
   if(servosDefaulted) {
     // /servos.txt wasn't found - arms are already out at the eject position (see default_servos()).
@@ -32,13 +32,22 @@
 // this function turns the servo on, moves it, then switches it off.
 // x is the servo number.
 // y is the position to move to in the "servos" array
+// Last PWM value commanded on each channel, or -1 for unknown (at boot). Tracked here
+// rather than read back with pwm.getPWM(), which returns the channel's ON count (always
+// 0 here), so every call used to look like a move and inflate servoCount[]. Detaching
+// doesn't reset it: an unpowered servo stays where it was put.
+int lastPwm[4] = {-1, -1, -1, -1};
+
 void moveServo(int x, int y) {
+  if(x < 0 || x > 3 || y < 0 || y > 2)
+    return; // a bad arm index would write outside every per-arm array
 
-  armUp[x] = (y == 1); // see the comment on armUp[] in changer_v4_2.ino
+  armUp[x] = (y == 1); // see the comment on armUp[] in arm.h
 
-  if(pwm.getPWM(x) != servos[x][y]) {
-  // only update servoCount if the read position is different to where we're trying to get to.
+  if(lastPwm[x] != servos[x][y]) {
+  // only count it, and power the servo, if it's actually going somewhere new.
     servoCount[x]++;
+    lastPwm[x] = servos[x][y];
     
      pwm.setPWM(x, 0, servos[x][y]);
     if(DEBUG) {
@@ -65,8 +74,11 @@ void moveServo(int x, int y) {
 // for the same reason - this takes a raw typed value, not one that's already been
 // validated.
 void previewServo(int arm, int value) {
+  if(arm < 0 || arm > 3)
+    return;
   value = constrain(value, 0, 4095);
   pwm.setPWM(arm, 0, value);
+  lastPwm[arm] = value; // so moving back to a stored position afterwards is a real move
   servoCount[arm]++;
   servoTimeout = millis();
   if(DEBUG) {
@@ -84,7 +96,7 @@ void detachServo() {
     for (int x = 0; x < maxServo; x++) {
       pwm.setPWM(x, 0, 0);
       if(DEBUG) {
-        weblog.print(F("Detatch Servo: "));
+        weblog.print(F("Detach Servo: "));
         weblog.println(x);
       }
     }
@@ -94,6 +106,9 @@ void detachServo() {
 }
 
 void switchRods() {
+  if(!patterns[currentPattern].length)
+    return;
+  normalize_servonum();
 
   moveServo(patterns[currentPattern].steps[servonum-1] - '0', 0);
 
@@ -115,6 +130,9 @@ void switchRods() {
 // webserver.ino); the normal forward progression is still driven by the arm sensor via
 // operateArm(), this only ever runs on an explicit request to step back.
 void switchRodsBack() {
+  if(!patterns[currentPattern].length)
+    return;
+  normalize_servonum();
 
   moveServo(patterns[currentPattern].steps[servonum-1] - '0', 0);
 
@@ -279,31 +297,20 @@ void default_servos(){
       moveServo(x, 2);
     }
 
-    save_servos(SPIFFS, "/servos.txt");
+    save_servos(LittleFS, "/servos.txt");
 }
 
+// Written via SafeFile (safefile.h): a power cut mid-save leaves the previous file.
 void save_servos(fs::FS &fs, const char * path) {
+  String out = "";
+  for(int x = 0; x < 4; x++) {
+    out += String(servoCount[x]);
+    for(int y = 0; y < 3; y++)
+      out += "," + String(servos[x][y]);
+    out += "\n";
+  }
+
   weblog.print(F("Saving Servo Data: "));
   weblog.print(path);
-
-  File file = fs.open(path, FILE_WRITE);
-  if(!file){
-      weblog.println(F(" - failed to open file for writing"));
-      return;
-  } else {
-    weblog.println(F(" - Success!"));
-  }
-
-  // lets go simple.
-  for(int x = 0; x < 4; x++) {
-      file.print(servoCount[x]);
-      for(int y = 0; y < 3; y++) {
-        file.print(F(","));
-        file.print(servos[x][y]);
-      }
-      file.println();
-  }
-
-  file.close();
-
+  weblog.println(SafeFile::write(fs, path, out) ? F(" - Success!") : F(" - FAILED"));
 }

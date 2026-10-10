@@ -196,13 +196,7 @@ void program_display() {
     //u8g2.print(temp_program[i]);
     u8g2.print((patterns[currentPattern].steps[i-1] - '0')+1);
   }
-  
 
-  servonum = menu_position-2;
-  if(servonum < 0)
-    servonum = 0;
-
-  //weblog.println(menu_position);
 }
 
 // Page for adjusting the arm servo positions (Low/High/Eject) and the test cycle count (TEST).

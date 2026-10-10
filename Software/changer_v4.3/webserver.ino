@@ -1,13 +1,14 @@
 String processor(const String& var)
 {
-  if(var == "SPIFFS_FREE_BYTES")
-    return convertFileSize((SPIFFS.totalBytes() - SPIFFS.usedBytes()));
-  if(var == "SPIFFS_USED_BYTES")
-    return convertFileSize(SPIFFS.usedBytes());
-  if(var == "SPIFFS_TOTAL_BYTES")
-    return convertFileSize(SPIFFS.totalBytes());
+  // FS_* since 4.3; the old SPIFFS_* names still work for pages restored from older backups
+  if(var == "FS_FREE_BYTES" || var == "SPIFFS_FREE_BYTES")
+    return convertFileSize((LittleFS.totalBytes() - LittleFS.usedBytes()));
+  if(var == "FS_USED_BYTES" || var == "SPIFFS_USED_BYTES")
+    return convertFileSize(LittleFS.usedBytes());
+  if(var == "FS_TOTAL_BYTES" || var == "SPIFFS_TOTAL_BYTES")
+    return convertFileSize(LittleFS.totalBytes());
   if(var == "LISTEN_FILES")
-    return listDir(SPIFFS, "/", 0);
+    return listDir(LittleFS, "/", 0);
 
   if(var == "BUILDDATE")
     return __DATE__;
@@ -76,7 +77,7 @@ String processor(const String& var)
       return "off";
     if(!wifi_connected)
       return "connecting...";
-    if(WiFi.getMode() == WIFI_AP)
+    if(hotspot_mode())
       return WiFi.softAPIP().toString();
     return WiFi.localIP().toString();
   }
@@ -117,12 +118,84 @@ bool wifiScanStarted = false;
 unsigned long wifiScanStartTime = 0;
 #define WIFI_SCAN_TIMEOUT_MS 15000
 
+// Results of the scan run just before the hotspot came up, ready for the join page's
+// first request - so the list appears instantly. Empty once used (or if there's none).
+String prescanJson = "";
+
+// Turns the finished scan's n results into the JSON the join page expects, and frees
+// them. Used by /scan, and by the scan run just before the hotspot starts (see
+// start_hotspot() in wifi.ino).
+String build_scan_json(int n) {
+  // The same network's SSID is often seen more than
+  // once (multiple APs/mesh nodes sharing one name) - keep only the strongest
+  // signal per SSID, then sort strongest-first, the way a phone's WiFi picker
+  // would show it.
+  const int MAX_NETWORKS = 32;
+  String ssids[MAX_NETWORKS];
+  int32_t rssis[MAX_NETWORKS];
+  bool secures[MAX_NETWORKS];
+  int unique = 0;
+
+  for(int i = 0; i < n && unique < MAX_NETWORKS; i++) {
+    String s = WiFi.SSID(i);
+    if(s.length() == 0)
+      continue; // hidden network broadcasting no name - nothing to offer here
+
+    int existing = -1;
+    for(int j = 0; j < unique; j++) {
+      if(ssids[j] == s) {
+        existing = j;
+        break;
+      }
+    }
+    if(existing == -1) {
+      ssids[unique] = s;
+      rssis[unique] = WiFi.RSSI(i);
+      secures[unique] = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+      unique++;
+    } else if(WiFi.RSSI(i) > rssis[existing]) {
+      rssis[existing] = WiFi.RSSI(i);
+      secures[existing] = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+    }
+  }
+
+  // Insertion sort, strongest (least negative dBm) first - unique is at most
+  // MAX_NETWORKS, nowhere near large enough to need anything fancier.
+  for(int i = 1; i < unique; i++) {
+    String sSsid = ssids[i];
+    int32_t sRssi = rssis[i];
+    bool sSecure = secures[i];
+    int j = i - 1;
+    while(j >= 0 && rssis[j] < sRssi) {
+      ssids[j + 1] = ssids[j];
+      rssis[j + 1] = rssis[j];
+      secures[j + 1] = secures[j];
+      j--;
+    }
+    ssids[j + 1] = sSsid;
+    rssis[j + 1] = sRssi;
+    secures[j + 1] = sSecure;
+  }
+
+  String json = "{\"status\":\"done\",\"networks\":[";
+  for(int i = 0; i < unique; i++) {
+    if(i > 0)
+      json += ",";
+    json += "{\"ssid\":\"" + jsonEscape(ssids[i]) + "\",\"rssi\":" + String(rssis[i])
+          + ",\"secure\":" + (secures[i] ? "true" : "false") + "}";
+  }
+  json += "]}";
+
+  WiFi.scanDelete();
+  return json;
+}
+
 void setupAsyncServer() {
   server.on("/manage", HTTP_GET, [](AsyncWebServerRequest *request) {
     if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
       return request->requestAuthentication();
     }
-    request->send(SPIFFS, "/manage.html", String(), false, processor);
+    request->send(LittleFS, "/manage.html", String(), false, processor);
   });
 
  
@@ -131,16 +204,16 @@ void setupAsyncServer() {
       return request->requestAuthentication();
     }
     rebooting = !Update.hasError();
-    AsyncWebServerResponse *response = request->beginResponse(
-      SPIFFS,
-      rebooting ? "/ok.html" : "/failed.html",
-      "text/html"
-    );
+    // Served from the firmware, not the copy on the filesystem: that copy only gets
+    // refreshed by Fix after the new firmware is running, so it could be a version
+    // behind (e.g. still pointing Return at the old /manage page).
+    AsyncWebServerResponse *response = request->beginResponse(200, "text/html",
+      rebooting ? ok_html : failed_html);
 
     response->addHeader("Connection", "close");
     request->send(response);
   },
-  [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
+  [](AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
   {
     if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
       return request->requestAuthentication();
@@ -189,9 +262,9 @@ void setupAsyncServer() {
       savePath = "new.txt";
     } else {
       savePath = inputMessage;
-      textareaContent = readFile(SPIFFS, inputMessage.c_str());
+      textareaContent = readFile(LittleFS, inputMessage.c_str());
     }
-    request->send(SPIFFS, "/edit.html", String(), false, edit_processor);
+    request->send(LittleFS, "/edit.html", String(), false, edit_processor);
   });
 
 
@@ -206,7 +279,7 @@ void setupAsyncServer() {
     if (request->hasParam("save_path")) {
       savePath = request->getParam("save_path")->value();
     }
-    writeFile(SPIFFS, savePath.c_str(), inputMessage.c_str());
+    writeFile(LittleFS, savePath.c_str(), inputMessage.c_str());
 
     request->redirect("/manage");
   });
@@ -219,7 +292,7 @@ void setupAsyncServer() {
     String inputMessage = "/" + request->getParam("delete_path")->value();
 
     if(inputMessage !="choose") {
-      SPIFFS.remove(inputMessage.c_str());
+      LittleFS.remove(inputMessage.c_str());
     }
     request->redirect("/manage");
   });
@@ -231,7 +304,7 @@ void setupAsyncServer() {
     String inputMessage = "/" + request->getParam("download_path")->value();
 
     
-    request->send(SPIFFS, inputMessage, "application/octet-stream", true);
+    request->send(LittleFS, inputMessage, "application/octet-stream", true);
 
     request->redirect("/manage");
   });
@@ -241,9 +314,9 @@ void setupAsyncServer() {
     if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
       return request->requestAuthentication();
     }
-    SPIFFS.format();
-    request->send(200);
-    ESP.restart();
+    if(!WebActions::push(WebActions::FORMAT))
+      return request->send(503, "text/plain", "busy, try again");
+    request->send(200, "text/plain", "Formatting and restarting.");
   });
 
   // just an exception for our ini file so we don't accidentally share our config with the world
@@ -263,7 +336,7 @@ void setupAsyncServer() {
   // to reach this file, including a direct /join.html request (e.g. the "WiFi
   // Setup" link on index.html), not just when it's reached via "/" below.
   server.on("/join.html", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(SPIFFS, "/join.html", "text/html");
+    request->send(LittleFS, "/join.html", "text/html");
   });
 
   // Root page: the WiFi join page while we're our own access point (nothing configured,
@@ -272,8 +345,8 @@ void setupAsyncServer() {
   // every other path (including a direct request for /index.html) still falls through to
   // serveStatic as normal.
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if(WiFi.getMode() == WIFI_AP) {
-      request->send(SPIFFS, "/join.html", "text/html"); // no processor - see the /join.html route above
+    if(hotspot_mode()) {
+      request->send(LittleFS, "/join.html", "text/html"); // no processor - see the /join.html route above
     } else {
       sendIndexPage(request); // adds the "pages out of date" banner when needed - see pages.ino
     }
@@ -314,7 +387,7 @@ void setupAsyncServer() {
 
     http_password = next;
     ArduinoOTA.setPassword(http_password.c_str()); // network uploads use the same password
-    save_config(SPIFFS, "/config.ini");
+    save_config(LittleFS, "/config.ini");
     weblog.println(F("Web password changed."));
     request->send(200, "text/html", messagePage("Password changed",
       "Your browser will ask you to log in again - use the new password.", true));
@@ -361,28 +434,12 @@ void setupAsyncServer() {
     String newPassword = request->hasParam("password", true)
       ? request->getParam("password", true)->value() : "";
 
-    applyWifiCredentials(newSsid, newPassword);
+    if(!WebActions::push(WebActions::JOIN, 0, 0, 0, 0, newSsid.c_str(), newPassword.c_str()))
+      return request->send(400, "text/plain", "ssid or password too long");
 
-    request->send(SPIFFS, "/joining.html", String(), false, processor);
+    request->send(LittleFS, "/joining.html", String(), false, processor);
   });
 
-  // Scans for nearby WiFi networks for the join page's "Scan for networks" button.
-  // No auth - matches /join.html itself; this only reads, never changes anything.
-  //
-  // One endpoint handles start/poll/results, since the scan itself has to run async
-  // (WiFi.scanNetworks(true)) rather than blocking this handler for the 2-4 seconds
-  // a scan takes - a blocking call here risks a watchdog timeout and stalls every
-  // other request while it runs. The page's JS just polls this every second or so
-  // and acts on whichever status comes back:
-  //   {"status":"started"}             - kicked off just now, poll again shortly
-  //   {"status":"running"}             - still in progress, poll again shortly
-  //   {"status":"done","networks":[…]} - finished; each entry is
-  //                                      {"ssid":…, "rssi":…, "secure":true|false}
-  //
-  // This only runs while already connected over STA - scanning from pure AP mode
-  // needs the radio in WIFI_AP_STA first, which isn't worth the complexity for a
-  // feature that's only really useful when you're already on the network you'd be
-  // switching away from.
   // Turns WiFi off entirely - always needs admin auth (unlike /join, which only
   // gates once configured), since unlike changing networks, this has no "still
   // works, just different" outcome: it always disconnects whoever's using it right
@@ -391,13 +448,11 @@ void setupAsyncServer() {
     if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
       return request->requestAuthentication();
     }
-    // Respond before actually dropping the radio, not after - once WiFi.mode(WIFI_OFF)
-    // runs, there's no guarantee the response still makes it out over the connection
-    // being switched off out from under it.
+    // loop() turns the radio off a moment after this response has gone out
+    if(!WebActions::push(WebActions::WIFI_OFF))
+      return request->send(503, "text/plain", "busy, try again");
     request->send(200, "text/plain",
       "WiFi disabled. Reconnect over USB serial, or use the unit's own WiFi menu page, to turn it back on.");
-    delay(100);
-    setWifiEnabled(false);
   });
 
   // I2C settings all need admin auth, same reasoning as /join: these persist a
@@ -409,16 +464,17 @@ void setupAsyncServer() {
     if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
       return request->requestAuthentication();
     }
-    setI2CEnabled(true);
-    // JSON, not a redirect - the page updates itself in place via JS rather than
-    // navigating anywhere, now that this is reached via fetch() rather than a form.
+    if(!WebActions::push(WebActions::I2C_ENABLE, 1))
+      return request->send(503, "text/plain", "busy, try again");
+    // JSON, not a redirect - the page updates itself in place via JS.
     request->send(200, "application/json", "{\"enabled\":true}");
   });
   server.on("/i2c_off", HTTP_GET, [](AsyncWebServerRequest *request) {
     if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
       return request->requestAuthentication();
     }
-    setI2CEnabled(false);
+    if(!WebActions::push(WebActions::I2C_ENABLE, 0))
+      return request->send(503, "text/plain", "busy, try again");
     request->send(200, "application/json", "{\"enabled\":false}");
   });
 
@@ -455,7 +511,7 @@ void setupAsyncServer() {
       return;
     }
     debounceDelay = constrain(request->getParam("value")->value().toInt(), 0, 2000);
-    save_config(SPIFFS, "/config.ini");
+    save_config(LittleFS, "/config.ini");
     request->send(200, "application/json", "{\"debounce\":" + String(debounceDelay) + "}");
   });
 
@@ -503,25 +559,16 @@ void setupAsyncServer() {
       request->send(400, "text/plain", "address must be between 08 and 77 (hex)");
       return;
     }
-    i2c2_address = addr;
-    save_config(SPIFFS, "/config.ini");
-    if(i2c_enabled) {
-      // Apply it immediately rather than requiring a reboot - same idea as
-      // applyWifiCredentials() forcing a fresh connection attempt with new creds.
-      teardown_i2c_secondary();
-      setup_i2c_secondary();
-    }
+    if(!WebActions::push(WebActions::I2C_ADDRESS, (int)addr))
+      return request->send(503, "text/plain", "busy, try again");
     // Echo back the normalized value (zero-padded, same as %I2C_ADDRESS% below) so
-    // the field shows exactly what got saved, not just whatever was typed.
-    String hex = String(i2c2_address, HEX);
+    // the field shows exactly what will be saved, not just whatever was typed.
+    String hex = String(addr, HEX);
     if(hex.length() < 2)
       hex = "0" + hex;
     request->send(200, "application/json", "{\"address\":\"" + hex + "\"}");
   });
 
-  // Returns everything currently held in weblog's ring buffer (see changer_v4_2.ino) -
-  // the same content the physical USB serial monitor would show, as plain text,
-  // oldest first. No auth - this never changes anything, same as /status.
   // Runs a command typed into the web console (Serial Log tab) through the same
   // interpreter Serial and I2C use. No separate response handling needed here -
   // cmdOut defaults to weblog (see commands.ino), so whatever the command prints
@@ -536,12 +583,17 @@ void setupAsyncServer() {
       request->send(400, "text/plain", "missing cmd");
       return;
     }
-    processingViaSingleShot = true;
-    processCommand(request->getParam("cmd")->value());
-    processingViaSingleShot = false;
-    request->send(200, "text/plain", "OK");
+    String cmd = request->getParam("cmd")->value();
+    if(cmd.length() >= 128)
+      return request->send(400, "text/plain", "command too long");
+    if(!WebActions::push(WebActions::COMMAND, 0, 0, 0, 0, cmd.c_str(), nullptr))
+      return request->send(503, "text/plain", "busy, try again");
+    request->send(200, "text/plain", "OK"); // its output appears in the log
   });
 
+  // Returns everything currently held in weblog's ring buffer (see changer_v4.3.ino) -
+  // the same content the physical USB serial monitor would show, as plain text,
+  // oldest first. No auth - this never changes anything, same as /status.
   server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send(200, "text/plain", weblog.getContents());
   });
@@ -592,21 +644,18 @@ void setupAsyncServer() {
       request->send(400, "text/plain", "arm must be 0-3");
       return;
     }
-    int low = constrain(request->getParam("low")->value().toInt(), 0, 4095);
-    int high = constrain(request->getParam("high")->value().toInt(), 0, 4095);
-    int eject = constrain(request->getParam("eject")->value().toInt(), 0, 4095);
-    servos[arm][0] = low;
-    servos[arm][1] = high;
-    servos[arm][2] = eject;
-    save_servos(SPIFFS, "/servos.txt");
+    // 1-4095, the same range servos.txt loading accepts (0 would leave it unpowered)
+    int low = constrain(request->getParam("low")->value().toInt(), 1, 4095);
+    int high = constrain(request->getParam("high")->value().toInt(), 1, 4095);
+    int eject = constrain(request->getParam("eject")->value().toInt(), 1, 4095);
+    if(!WebActions::push(WebActions::SERVO_SAVE, arm, low, high, eject, nullptr, nullptr))
+      return request->send(503, "text/plain", "busy, try again");
     request->send(200, "application/json",
       "{\"low\":" + String(low) + ",\"high\":" + String(high) + ",\"eject\":" + String(eject) + "}");
   });
 
   // Moves one arm directly to a given PWM value - see previewServo() in servos.ino.
-  // This is a single, immediate move (not a blocking cycle like /servo_test), so no
-  // watchdog concern calling it straight from the handler. No auth - momentary
-  // hardware action, same bar as /next/back/press/servo_test.
+  // No auth - momentary hardware action, same bar as /next/back/press/servo_test.
   server.on("/servo_preview", HTTP_GET, [](AsyncWebServerRequest *request) {
     if(!request->hasParam("arm") || !request->hasParam("value")) {
       request->send(400, "text/plain", "missing arm/value");
@@ -617,7 +666,8 @@ void setupAsyncServer() {
       request->send(400, "text/plain", "arm must be 0-3");
       return;
     }
-    previewServo(arm, request->getParam("value")->value().toInt());
+    if(!WebActions::push(WebActions::SERVO_PREVIEW, arm, request->getParam("value")->value().toInt()))
+      return request->send(503, "text/plain", "busy, try again");
     request->send(200, "text/plain", "OK");
   });
 
@@ -631,7 +681,8 @@ void setupAsyncServer() {
       request->send(400, "text/plain", "arm must be 0-3");
       return;
     }
-    startArmTest(arm, false);
+    if(!WebActions::push(WebActions::SERVO_TEST, arm, 0))
+      return request->send(503, "text/plain", "busy, try again");
     request->send(200, "text/plain", "Test started.");
   });
 
@@ -639,7 +690,8 @@ void setupAsyncServer() {
   // see startArmTest() in arm.ino. No auth, same bar as /servo_test and the other
   // momentary hardware actions.
   server.on("/servo_test_all", HTTP_GET, [](AsyncWebServerRequest *request) {
-    startArmTest(0, true);
+    if(!WebActions::push(WebActions::SERVO_TEST, 0, 1))
+      return request->send(503, "text/plain", "busy, try again");
     request->send(200, "text/plain", "Test started.");
   });
 
@@ -653,11 +705,39 @@ void setupAsyncServer() {
       return;
     }
     test_run = constrain(request->getParam("value")->value().toInt(), 1, 50);
-    save_config(SPIFFS, "/config.ini");
+    save_config(LittleFS, "/config.ini");
     request->send(200, "application/json", "{\"testRun\":" + String(test_run) + "}");
   });
 
+  // Scans for nearby WiFi networks for the join page's "Scan for networks" button.
+  // No auth - matches /join.html itself; this only reads, never changes anything.
+  //
+  // One endpoint handles start/poll/results, since the scan itself has to run async
+  // (WiFi.scanNetworks(true)) rather than blocking this handler for the 2-4 seconds
+  // a scan takes - a blocking call here risks a watchdog timeout and stalls every
+  // other request while it runs. The page's JS just polls this every second or so
+  // and acts on whichever status comes back:
+  //   {"status":"started"}             - kicked off just now, poll again shortly
+  //   {"status":"running"}             - still in progress, poll again shortly
+  //   {"status":"done","networks":[…]} - finished; each entry is
+  //                                      {"ssid":…, "rssi":…, "secure":true|false}
+  //
+  // Works in hotspot mode too: the hotspot runs as WIFI_AP_STA (see setup_AP() in
+  // wifi.ino), so scanning doesn't have to change the radio mode.
   server.on("/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
+    // The list scanned just before the hotspot started, if it hasn't been shown yet.
+    if(prescanJson.length()) {
+      request->send(200, "application/json", prescanJson);
+      prescanJson = "";
+      return;
+    }
+    // ?cached=1 (the join page on load) only wants that pre-loaded list - don't start
+    // a scan just because someone opened the page.
+    if(request->hasParam("cached")) {
+      request->send(200, "application/json", "{\"status\":\"none\"}");
+      return;
+    }
+
     int n = WiFi.scanComplete();
 
     if(n == WIFI_SCAN_RUNNING) {
@@ -681,69 +761,9 @@ void setupAsyncServer() {
       return;
     }
 
-    // n >= 0: results are ready. The same network's SSID is often seen more than
-    // once (multiple APs/mesh nodes sharing one name) - keep only the strongest
-    // signal per SSID, then sort strongest-first, the way a phone's WiFi picker
-    // would show it.
+    // n >= 0: results are ready.
     wifiScanStarted = false;
-    const int MAX_NETWORKS = 32;
-    String ssids[MAX_NETWORKS];
-    int32_t rssis[MAX_NETWORKS];
-    bool secures[MAX_NETWORKS];
-    int unique = 0;
-
-    for(int i = 0; i < n && unique < MAX_NETWORKS; i++) {
-      String s = WiFi.SSID(i);
-      if(s.length() == 0)
-        continue; // hidden network broadcasting no name - nothing to offer here
-
-      int existing = -1;
-      for(int j = 0; j < unique; j++) {
-        if(ssids[j] == s) {
-          existing = j;
-          break;
-        }
-      }
-      if(existing == -1) {
-        ssids[unique] = s;
-        rssis[unique] = WiFi.RSSI(i);
-        secures[unique] = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
-        unique++;
-      } else if(WiFi.RSSI(i) > rssis[existing]) {
-        rssis[existing] = WiFi.RSSI(i);
-        secures[existing] = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
-      }
-    }
-
-    // Insertion sort, strongest (least negative dBm) first - unique is at most
-    // MAX_NETWORKS, nowhere near large enough to need anything fancier.
-    for(int i = 1; i < unique; i++) {
-      String sSsid = ssids[i];
-      int32_t sRssi = rssis[i];
-      bool sSecure = secures[i];
-      int j = i - 1;
-      while(j >= 0 && rssis[j] < sRssi) {
-        ssids[j + 1] = ssids[j];
-        rssis[j + 1] = rssis[j];
-        secures[j + 1] = secures[j];
-        j--;
-      }
-      ssids[j + 1] = sSsid;
-      rssis[j + 1] = sRssi;
-      secures[j + 1] = sSecure;
-    }
-
-    String json = "{\"status\":\"done\",\"networks\":[";
-    for(int i = 0; i < unique; i++) {
-      if(i > 0)
-        json += ",";
-      json += "{\"ssid\":\"" + jsonEscape(ssids[i]) + "\",\"rssi\":" + String(rssis[i])
-            + ",\"secure\":" + (secures[i] ? "true" : "false") + "}";
-    }
-    json += "]}";
-
-    WiFi.scanDelete();
-    request->send(200, "application/json", json);
+    request->send(200, "application/json", build_scan_json(n));
   });
 
   // Current arm/pattern state for the index page's live graphic. No auth - same
@@ -778,7 +798,9 @@ void setupAsyncServer() {
   // Triggers the same action pressing arm button ?arm=0-3 would on the device itself.
   server.on("/press", HTTP_GET, [](AsyncWebServerRequest *request) {
     if(request->hasParam("arm")) {
-      webPressButton(request->getParam("arm")->value().toInt());
+      int arm = request->getParam("arm")->value().toInt();
+      if(arm >= 0 && arm <= 3 && !WebActions::push(WebActions::PRESS, arm))
+        return request->send(503, "text/plain", "busy, try again");
     }
     request->send(200);
   });
@@ -787,9 +809,8 @@ void setupAsyncServer() {
   server.on("/switch", HTTP_GET, [](AsyncWebServerRequest *request) {
     if(request->hasParam("pattern")) {
       int n = request->getParam("pattern")->value().toInt();
-      if(n >= 0 && n <= 3) {
-        change_program(n);
-      }
+      if(n >= 0 && n <= 3 && !WebActions::push(WebActions::SWITCH, n))
+        return request->send(503, "text/plain", "busy, try again");
     }
     request->send(200);
   });
@@ -801,15 +822,13 @@ void setupAsyncServer() {
   // meaningful with an active sequence (not manual/loading mode), same condition the
   // sequence-position display itself is hidden under.
   server.on("/back", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if(patterns[currentPattern].length) {
-      switchRodsBack();
-    }
+    if(!WebActions::push(WebActions::BACK))
+      return request->send(503, "text/plain", "busy, try again");
     request->send(200);
   });
   server.on("/next", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if(patterns[currentPattern].length) {
-      switchRods();
-    }
+    if(!WebActions::push(WebActions::NEXT))
+      return request->send(503, "text/plain", "busy, try again");
     request->send(200);
   });
 
@@ -821,11 +840,13 @@ void setupAsyncServer() {
 
     int n = request->getParam("n")->value().toInt();
     String steps = request->getParam("steps")->value();
-    String error = setPatternSteps(n, steps);
+    String error = validatePatternSteps(n, steps);
     if(error.length()) {
       request->send(400, "text/plain", error);
       return;
     }
+    if(!WebActions::push(WebActions::SET_PATTERN, n, 0, 0, 0, steps.c_str(), nullptr))
+      return request->send(503, "text/plain", "busy, try again");
 
     request->send(200);
   });
@@ -833,15 +854,29 @@ void setupAsyncServer() {
   // /backup and /restore - see backup.ino
   setupBackupRoutes();
 
-  // Default share out any file we have in SPIFFS.
-  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html").setTemplateProcessor(processor);
+  // Default share out any file we have in LittleFS.
+  server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html").setTemplateProcessor(processor);
 
   server.onNotFound(notFound);
   server.begin();
 }
 
 
+// In hotspot mode every unknown address - including the connectivity checks phones and
+// laptops make right after joining (/generate_204, /hotspot-detect.html,
+// /connecttest.txt...) - is redirected to the join page, which is what makes them pop
+// it up automatically. See captive_portal_loop() in wifi.ino.
 void notFound(AsyncWebServerRequest *request) {
+  if(hotspot_mode()) {
+    if(DEBUG) {
+      // shows whether a device's connectivity check is reaching us at all
+      weblog.print(F("Captive redirect: "));
+      weblog.print(request->host());
+      weblog.println(request->url());
+    }
+    request->redirect("http://" + WiFi.softAPIP().toString() + "/");
+    return;
+  }
   request->send(404, "text/plain", "Page not found");
 }
 
@@ -920,17 +955,17 @@ void writeFile(fs::FS &fs, String path, const char * message)
 
   if(path == "config.ini") {
     // if we just edited the config.ini file, reload it.
-    load_config(SPIFFS, "/config.ini");
+    load_config(LittleFS, "/config.ini");
   }
 }
 
-void uploadFile(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) 
+void uploadFile(AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final) 
 {
   if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
     return request->requestAuthentication();
   }
   if(!index) {
-    request->_tempFile = SPIFFS.open("/" + filename, "w");
+    request->_tempFile = LittleFS.open("/" + filename, "w");
   }
   if(len) {
     request->_tempFile.write(data, len);

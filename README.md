@@ -10,7 +10,7 @@ Thanks for purchasing or building your own AutoChanger.  I've put together a pag
 
 It is highly recommended you upgrade your AutoChanger firmware to the latest.  The current latest is v4.2.9
 
-[How to Upgrade Your AutoChanger Firmware](https://github.com/mage0r/AutoChanger/wiki/How-to-upgrade)
+[How to Upgrade Your AutoChanger Firmware](https://github.com/mage0r/AutoChanger/wiki/How%E2%80%90to%E2%80%90upgrade)
 
 [How to Use Your AutoChanger](https://github.com/mage0r/AutoChanger/wiki/How-to-use-Firmware-Version-4.2)
 

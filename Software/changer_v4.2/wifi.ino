@@ -56,12 +56,9 @@ void setup_wifi()
     // Hostname defaults to esp3232-[MAC]
     ArduinoOTA.setHostname(PROJECT);
 
-    // No authentication by default
-    // ArduinoOTA.setPassword("admin");
-
-    // Password can be set with it's md5 value as well
-    // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
-    // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
+    // Same password as the web interface (http_password, from config.ini), so the
+    // Arduino IDE asks for it before a network upload. /password updates it too.
+    ArduinoOTA.setPassword(http_password.c_str());
 
     ArduinoOTA
       .onStart([]() {

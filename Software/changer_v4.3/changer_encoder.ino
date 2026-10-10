@@ -49,15 +49,14 @@ void read_encoder() {
 
         if(menu_position < 0)
           menu_position = 0;
-        else if(menu_position > 7)
-          menu_position = 7;
+        else if(menu_position > 6)
+          menu_position = 6; // TEST is the last field; 7 is its edit mode, entered by a press
 
         syncArmServo(); // reflect the newly selected field right away
       } else if (menu_position == 7) {
-        changeValues(forward ? 1 : -1);
+        changeValues(forward ? 1 : -1); // cycle count moves by 1
       } else {
-        int step = (menu_position == 7) ? 1 : 10; // servo positions move in bigger steps; cycle count by 1
-        changeValues(forward ? step : -step);
+        changeValues(forward ? 10 : -10); // servo positions move in bigger steps
         syncArmServo(); // reflect the adjusted value right away
       }
     } else if(menu_page == 3) {
@@ -110,20 +109,14 @@ void read_encoder() {
   }
 }
 
-// When we're in admin mode, we can edit individual values.
+// When we're in admin mode, we can edit individual values. Clamped to the same
+// ranges the web UI and servos.txt loading use: positions 1-4095 (the PCA9685's
+// 12-bit range - 0 would leave the servo unpowered), test cycles 1-50.
 void changeValues(int adjust) {
-  if(menu_position == 1) {
-    // Change the Low value (down position)
-    servos[currentPattern][0] = servos[currentPattern][0] + adjust;
-   } else if (menu_position == 3) {
-    // Change the High value (up position)
-    servos[currentPattern][1] = servos[currentPattern][1] + adjust;
-   } else if (menu_position == 5) {
-    // Change the Eject value
-    servos[currentPattern][2] = servos[currentPattern][2] + adjust;
-   } else if (menu_position == 7) {
-    // Change the test cycle count
-    test_run = test_run + adjust;
-   }
-   
+  if(menu_position == 1 || menu_position == 3 || menu_position == 5) {
+    int field = menu_position / 2; // 1->LOW(0), 3->HIGH(1), 5->EJECT(2)
+    servos[currentPattern][field] = constrain(servos[currentPattern][field] + adjust, 1, 4095);
+  } else if (menu_position == 7) {
+    test_run = constrain((int)test_run + adjust, 1, 50);
+  }
 }
