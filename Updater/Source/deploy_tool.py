@@ -245,6 +245,12 @@ DEVICE_SERIAL_BAUD = 115200
 CMD_TIMEOUT = 5.0    # seconds to wait for a simple command (RM) to report back
 FIX_TIMEOUT = 15.0   # FIX rewrites several files, so give it longer
 
+# After every flash attempt the tool reopens the port and records what the unit
+# prints as it starts up, so the saved log shows how the first boot went.
+RECONNECT_SECONDS = 15.0     # how long to keep retrying the port after the reset
+BOOT_CAPTURE_SECONDS = 20.0  # longest time to record startup output
+BOOT_CAPTURE_IDLE = 4.0      # stop early once the unit has gone quiet this long
+
 # File groups for the optional post-flash cleanup step, sent as RM <filename>
 # commands over serial once the device has rebooted on the new firmware.
 FILE_GROUPS = {
@@ -777,17 +783,19 @@ class DeployApp(tk.Tk):
             except SystemExit as exc:
                 # esptool's CLI layer calls sys.exit() on some paths even on success.
                 if exc.code in (0, None):
-                    self._clear_selected_files(device, files_to_clear)
+                    self._after_flash(device, files_to_clear)
                     self._finish(True, None)
                 else:
+                    self._after_flash(device, [], flash_ok=False)
                     self._finish(False, f"esptool exited with code {exc.code}")
                 return
             except Exception as exc:
                 self._log(f"ERROR: {exc}")
+                self._after_flash(device, [], flash_ok=False)
                 self._finish(False, str(exc))
                 return
 
-            self._clear_selected_files(device, files_to_clear)
+            self._after_flash(device, files_to_clear)
             self._finish(True, None)
         finally:
             if boot_app0_temp:
@@ -832,14 +840,108 @@ class DeployApp(tk.Tk):
             self._log(f"{command} -> (no response - this firmware may not support it)")
         return status
 
-    def _clear_selected_files(self, device, files_to_clear):
-        if not files_to_clear:
-            return
+    def _open_device_port(self, device):
+        """Keeps trying to open the device's serial port until it comes back after
+        the reset (native USB disappears and re-enumerates). Returns (ser, error)."""
+        deadline = time.time() + RECONNECT_SECONDS
+        last_exc = None
+        while time.time() < deadline:
+            try:
+                return serial.Serial(device, DEVICE_SERIAL_BAUD, timeout=0.5), None
+            except Exception as exc:
+                last_exc = exc
+                time.sleep(0.25)
+        return None, last_exc
 
+    def _capture_boot_output(self, ser, device):
+        """Records everything the unit prints after restarting, until it has been
+        quiet for BOOT_CAPTURE_IDLE seconds or BOOT_CAPTURE_SECONDS have passed.
+        If the port drops mid-capture (the reset can land after we opened it),
+        reopens it and carries on. Returns the open port, or None if lost."""
+        start = time.time()
+        last_rx = None
+        received = 0
+        buf = b""
+
+        def emit(raw):
+            line = raw.decode(errors="replace").rstrip("\r")
+            self._log(f"  > {line}")
+
+        while True:
+            now = time.time()
+            if now - start > BOOT_CAPTURE_SECONDS:
+                break
+            if last_rx is not None and now - last_rx > BOOT_CAPTURE_IDLE:
+                break
+            try:
+                chunk = ser.read(ser.in_waiting or 1)
+            except Exception:
+                try:
+                    ser.close()
+                except Exception:
+                    pass
+                self._log("  (port dropped - reconnecting)")
+                ser, _ = self._open_device_port(device)
+                if ser is None:
+                    self._log("  (could not reopen the port)")
+                    break
+                continue
+            if not chunk:
+                continue
+            last_rx = time.time()
+            received += len(chunk)
+            buf += chunk
+            while b"\n" in buf:
+                raw, buf = buf.split(b"\n", 1)
+                emit(raw)
+        if buf.strip():
+            emit(buf)
+
+        if received == 0:
+            self._log(
+                "  (nothing received - the unit may be stuck in download mode; "
+                "unplug it and plug it back in)"
+            )
+        else:
+            self._log(f"  ({received:,} bytes received)")
+        return ser
+
+    def _after_flash(self, device, files_to_clear, flash_ok=True):
+        """Reconnects once the unit restarts, logs its startup output, then runs
+        the optional file-clearing step (only after a successful flash)."""
         if serial is None:
-            self._log("pyserial not available - could not send commands to clear files.")
+            self._log("pyserial not available - can't record device output or clear files.")
             return
 
+        self._log("-" * 60)
+        self._log(
+            "Device output after restart:" if flash_ok
+            else "Device output after the failed update:"
+        )
+        ser, exc = self._open_device_port(device)
+        if ser is None:
+            self._log(f"Could not reconnect to {device}: {exc}")
+            if files_to_clear:
+                self._log(
+                    "The update itself still succeeded - you can clear files yourself "
+                    "over serial: RM each file, then FIX to recreate the defaults."
+                )
+            return
+
+        try:
+            ser = self._capture_boot_output(ser, device)
+            if ser is not None and files_to_clear:
+                self._clear_selected_files(ser, files_to_clear)
+        except Exception as exc:
+            self._log(f"Error talking to the device after the update: {exc}")
+        finally:
+            if ser is not None:
+                try:
+                    ser.close()
+                except Exception:
+                    pass
+
+    def _clear_selected_files(self, ser, files_to_clear):
         # Order matters. FIX recreates config.ini from what the unit currently has in
         # memory, so if config.ini were deleted before FIX ran, the old settings would
         # just be written straight back. Config is therefore removed LAST, after FIX,
@@ -848,47 +950,21 @@ class DeployApp(tk.Tk):
         other_files = [f for f in files_to_clear if f not in config_files]
 
         self._log("-" * 60)
-        self._log("Waiting for the device to restart before clearing files...")
-        time.sleep(3)  # give it a moment to reboot after the flash
+        self._log("Clearing files...")
+        for filename in other_files:
+            self._run_device_command(ser, f"RM {filename}")
 
-        ser = None
-        last_exc = None
-        for _attempt in range(10):
-            try:
-                ser = serial.Serial(device, DEVICE_SERIAL_BAUD, timeout=0.5)
-                break
-            except Exception as exc:
-                last_exc = exc
-                time.sleep(1)
+        if other_files:
+            self._log("Recreating default files (FIX)...")
+            self._run_device_command(ser, "FIX", FIX_TIMEOUT)
 
-        if ser is None:
-            self._log(f"Could not reconnect to {device} to clear files: {last_exc}")
+        for filename in config_files:
+            self._run_device_command(ser, f"RM {filename}")
+        if config_files:
             self._log(
-                "The update itself still succeeded - you can do this yourself over "
-                "serial: RM each file, then FIX to recreate the defaults."
+                "Config removed - it resets to defaults the next time the unit "
+                "restarts (unplug it and plug it back in)."
             )
-            return
-
-        try:
-            time.sleep(1)  # let the USB CDC connection settle after reconnecting
-            for filename in other_files:
-                self._run_device_command(ser, f"RM {filename}")
-
-            if other_files:
-                self._log("Recreating default files (FIX)...")
-                self._run_device_command(ser, "FIX", FIX_TIMEOUT)
-
-            for filename in config_files:
-                self._run_device_command(ser, f"RM {filename}")
-            if config_files:
-                self._log(
-                    "Config removed - it resets to defaults the next time the unit "
-                    "restarts (unplug it and plug it back in)."
-                )
-        except Exception as exc:
-            self._log(f"Error while clearing files: {exc}")
-        finally:
-            ser.close()
 
     @staticmethod
     def _one_line(text):

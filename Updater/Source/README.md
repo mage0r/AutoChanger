@@ -90,6 +90,21 @@ the pages back straight away.
 - This needs firmware with the serial command feature (`RM`/`FIX`, v4.1+). On
   anything older the tool logs "no response" for each step and carries on.
 
+## Startup output
+
+After every flash attempt, successful or not, the tool reopens the port and
+records what the unit prints as it starts up. That covers ROM boot messages,
+firmware startup, SPIFFS mounting, and any crash or reset loop. It stops once the
+unit has been quiet for 4 seconds, or after 20 seconds at most. The lines appear
+in the Details pane and the saved log, prefixed with `>`. Any file-clearing step
+runs after this.
+
+If nothing is received at all, the unit is most likely sitting in download mode
+after the flash. Unplugging it and plugging it back in usually fixes that.
+
+On native USB the port disappears briefly during the reset, so the first fraction
+of a second of output can be missed before the tool reconnects.
+
 ## Update logs
 
 After every update attempt - successful or not - the tool saves the contents of
@@ -98,7 +113,7 @@ the Details pane to a timestamped file such as
 finishes. It's written next to the tool (falling back to your home folder, then
 the temp folder, if that location isn't writable). Each log starts with a
 header - result, port, firmware file with its size and SHA-256, which files were
-cleared, and OS/Python/esptool versions - followed by every line of output with a time. Handy to attach when
+cleared, and OS/Python/esptool versions - followed by every line of output with a time, including the unit's startup output. Handy to attach when
 something goes wrong. Each log only contains what happened since the previous
 one, so logs from several updates in one session don't repeat each other.
 
