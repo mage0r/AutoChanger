@@ -33,10 +33,13 @@ void check_tone() {
 }
 
 void tone(byte pin, double freq, int tone_length) {
-  ledcSetup(0, 2000, 16); // setup beeper on LEDC channel 0
-  ledcAttachPin(pin, 0); // attach to channel 0 - was 1, a channel ledcSetup() never
-                          // configured, which is exactly what "LEDC is not
-                          // initialized" means
+  // 10-bit resolution, the same as ledcWriteTone() itself uses. It was 16-bit, and at
+  // 16 bits the LEDC timer can't go above ~1.2kHz (80MHz / 65536), so setting up a
+  // 2kHz channel failed - the source of "ledc_get_duty: LEDC is not initialized" in
+  // the log on every beep. ledcWriteTone() then set the channel up again itself,
+  // which is why the buzzer still sounded.
+  ledcSetup(0, 2000, 10); // setup beeper on LEDC channel 0
+  ledcAttachPin(pin, 0);  // attach to channel 0
   ledcWriteTone(0, freq); // play tone on channel 0, matching the above
   // start + duration rather than an absolute end time, so it survives millis() rollover
   tone_start = millis();

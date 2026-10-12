@@ -817,7 +817,7 @@ void setupAsyncServer() {
 
   // Steps the active pattern back/forward one position - see switchRodsBack() and
   // switchRods() in servos.ino. switchRods() is the same function the arm sensor
-  // itself calls (via operateArm() in arm.ino) for normal forward progression; this
+  // itself calls (via process_sensor() in arm.ino) for normal forward progression; this
   // just calls it directly rather than waiting for a physical trigger. Both only
   // meaningful with an active sequence (not manual/loading mode), same condition the
   // sequence-position display itself is hidden under.

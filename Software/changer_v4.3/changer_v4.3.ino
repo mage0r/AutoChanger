@@ -18,7 +18,7 @@
 
 // Set our version number.  Don't forget to update when featureset changes
 #define PROJECT "AutoChanger"
-#define VERSION "V.4.3.2"
+#define VERSION "V.4.3.3"
 
 #include <Wire.h>
 #include <Bounce2.h>
@@ -289,23 +289,10 @@ void loop() {
   readSerialCommands();
   readI2CCommands();
 
-  // armTrigger is set by an interrupt - the ISR itself keeps firing regardless of
-  // sensor_enabled (it's too trivial to be worth detaching/reattaching for this),
-  // this is just where the response to it is gated. Still clears armTrigger on the
-  // disabled path, not just when acting on it - operateArm() does that internally,
-  // but skipping it entirely would leave a stale true sitting there, ready to fire
-  // a phantom move the instant the sensor is re-enabled even though it hasn't
-  // actually passed since.
-  // Only acted on from the main page (menu_page 0) - on every other page the arms
-  // are being programmed, calibrated or left alone, and a carriage pass would
-  // otherwise switch them underneath you.
-  if(armTrigger) {
-    if(sensor_enabled && menu_page == 0) {
-      operateArm();
-    } else {
-      armTrigger = false;
-    }
-  }
+  // Carriage passes counted by the sensor interrupt - see process_sensor() in arm.ino.
+  // Only acted on from the main page with the sensor enabled; anything else is
+  // ignored (and logged at DEBUG 1).
+  process_sensor();
 
   run_web_actions(); // anything the web UI asked for since the last pass - see webactions.ino
   captive_portal_loop(); // hotspot mode: point every DNS lookup at us - see wifi.ino

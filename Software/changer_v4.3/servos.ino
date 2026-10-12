@@ -128,7 +128,7 @@ void switchRods() {
 // current arm, steps servonum back one (wrapping to the end instead of the start), then
 // raises whatever arm is now current. Used by the web UI's Back button (see /back in
 // webserver.ino); the normal forward progression is still driven by the arm sensor via
-// operateArm(), this only ever runs on an explicit request to step back.
+// process_sensor(), this only ever runs on an explicit request to step back.
 void switchRodsBack() {
   if(!patterns[currentPattern].length)
     return;

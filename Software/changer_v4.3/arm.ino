@@ -14,27 +14,64 @@ void setSensorEnabled(boolean enabled) {
   save_config(LittleFS, "/config.ini");
 }
 
-void operateArm() {
- // Check if we need to update the arm
-    // We only need to do this if our pattern is non-zero
-    // If the pattern is 0, it's a manual pattern
-    // only do this activity if the 
-    if(patterns[currentPattern].length && (millis() - lastDebounceTime) > debounceDelay) {
-      if(armCounter == 0){
-          switchRods();
-          armCounter = 1;
-          
-          // Turn the buzzer on for 1 second
-          if(BUZZER)
-            tone(BUZZER_PIN, buzzerNote, 1000);
-      }
-      else {
-          armCounter = 0;
-      }
+// Acts on any carriage passes the sensor interrupt has counted since the last call, in
+// order - one switch per two passes, as before. Called every loop().
+//
+// At DEBUG 1 it also logs what happened to every edge, so a missed pass can be told
+// apart: no edge at all means the sensor didn't see the carriage (alignment, distance,
+// a faulty sensor); edges "ignored as bounce" mean the debounce is swallowing them;
+// "ignored" passes say why (sensor off, not on the main page, manual pattern).
+void process_sensor() {
+  static uint32_t seenEdges = 0;
+  static uint32_t seenPasses = 0;
 
-      lastDebounceTime = millis();
+  uint32_t edges = sensorEdges;   // 32-bit reads - atomic on the ESP32
+  uint32_t passes = sensorPasses;
+  uint32_t newEdges = edges - seenEdges;
+  uint32_t newPasses = passes - seenPasses;
+  seenEdges = edges;
+  seenPasses = passes;
+
+  if(newEdges > newPasses && DEBUG) {
+    weblog.print(F("Sensor: "));
+    weblog.print(newEdges - newPasses);
+    weblog.print(F(" edge(s) ignored as bounce (less than "));
+    weblog.print(debounceDelay);
+    weblog.println(F("ms after the previous edge)"));
+  }
+
+  for(uint32_t i = 0; i < newPasses; i++) {
+    const __FlashStringHelper *ignored = NULL;
+    if(!sensor_enabled)
+      ignored = F("sensor is off");
+    else if(menu_page != 0)
+      ignored = F("not on the main page");
+    else if(!patterns[currentPattern].length)
+      ignored = F("manual pattern");
+
+    if(ignored) {
+      if(DEBUG) {
+        weblog.print(F("Sensor: pass ignored - "));
+        weblog.println(ignored);
+      }
+      continue;
     }
-    armTrigger = false;
+
+    if(armCounter == 0) {
+      switchRods();
+      armCounter = 1;
+      if(DEBUG)
+        weblog.println(F("Sensor: pass - switching arms"));
+
+      // Turn the buzzer on for 1 second
+      if(BUZZER)
+        tone(BUZZER_PIN, buzzerNote, 1000);
+    } else {
+      armCounter = 0;
+      if(DEBUG)
+        weblog.println(F("Sensor: pass - no switch (every second pass)"));
+    }
+  }
 }
 
 // Moves the currently selected arm's servo to match whichever LOW/HIGH/EJECT field is in view.
