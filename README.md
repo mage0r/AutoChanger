@@ -8,11 +8,11 @@ How to use your AutoChanger
 
 Thanks for purchasing or building your own AutoChanger.  I've put together a page of all the different features for you to try.
 
-It is highly recommended you upgrade your AutoChanger firmware to the latest.  The current latest is v4.2.9
+It is highly recommended you upgrade your AutoChanger firmware to the latest.  The current latest is v4.3.3
 
 [How to Upgrade Your AutoChanger Firmware](https://github.com/mage0r/AutoChanger/wiki/How%E2%80%90to%E2%80%90upgrade)
 
-[How to Use Your AutoChanger](https://github.com/mage0r/AutoChanger/wiki/How-to-use-Firmware-Version-4.2)
+[How to Use Your AutoChanger](https://github.com/mage0r/AutoChanger/wiki/How-to-use-Firmware-Version-4.3)
 
 [Still using Version-3.9?  Check it out here](https://github.com/mage0r/AutoChanger/wiki/How-to-use-Firmware-Version-3.9)
 
