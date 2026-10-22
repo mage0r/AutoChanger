@@ -18,7 +18,7 @@
 
 // Set our version number.  Don't forget to update when featureset changes
 #define PROJECT "AutoChanger"
-#define VERSION "V.4.3.3"
+#define VERSION "V.4.3.4"
 
 #include <Wire.h>
 #include <Bounce2.h>
@@ -192,6 +192,12 @@ unsigned long run400 = 0;
 
 void setup() {
   Serial.begin(115200);
+  #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+  // Native USB serial: with a PC attached but no serial monitor open, nothing reads
+  // the output, and every write waited out a timeout once the buffer filled - boot
+  // (and the log after it) slowed to a crawl until reset. Drop the output instead.
+    Serial.setTxTimeoutMs(0);
+  #endif
 
   // First, build information
   weblog.print(F(PROJECT));
