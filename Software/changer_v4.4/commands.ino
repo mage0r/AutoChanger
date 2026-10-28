@@ -27,7 +27,7 @@ String currentCommandLine = ""; // the raw line currently being processed, for c
 // serve two transports. It's pointed at &Serial normally; readI2CCommands() in i2c.ino
 // points it at a small in-RAM buffer for the duration of one command, so that command's
 // output lands there instead of going out over USB, then puts it back afterwards.
-Print *cmdOut = &weblog; // weblog tees to the real Serial too - see changer_v4.3.ino
+Print *cmdOut = &weblog; // weblog tees to the real Serial too - see changer_v4.4.ino
 
 // True for the duration of a command dispatched from a transport whose messages are
 // single, bounded, one-shot requests rather than a continuous byte stream - I2C (see
@@ -47,6 +47,20 @@ long putBytesRemaining = 0;
 String putTargetPath = "";
 String putTempPath = "";
 String putEchoLine = ""; // currentCommandLine at the time PUT started, for the final :OK/:ERR
+
+// Moves a finished PUT's .tmp over the real file. LittleFS renames over an existing
+// file in one step, so the old file is only gone once the new one is in place (it
+// used to be removed first, so a power cut in between lost both). The remove+rename
+// fallback is only for a filesystem whose rename won't replace - same as SafeFile.
+bool put_commit() {
+  SafeFile::Lock lock; // don't interleave with a settings save of the same file
+  if(LittleFS.rename(putTempPath, putTargetPath))
+    return true;
+  LittleFS.remove(putTargetPath);
+  return LittleFS.rename(putTempPath, putTargetPath);
+}
+unsigned long putLastByteAt = 0; // millis() of the last PUT byte - see PUT_TIMEOUT_MS
+#define PUT_TIMEOUT_MS 5000 // abandon a PUT after this long with no data
 
 struct CommandHelp {
   const char* syntax;
@@ -77,6 +91,10 @@ const CommandHelp commandTable[] = {
   {"ARMS", "AYAB-style: returns 4 characters, one per arm in order, '+' for up (HIGH) or '_' for down, then OK."},
   {"P<pattern> <sequence>", "AYAB-style: replaces pattern <pattern> (0-3) with <sequence> (digits 1-4, up to 99 long). Returns OK."},
   {"DEBUG <level>", "Sets the debug output level: 0=off, 1=normal, 2=verbose/millis()-timestamped. Saved to config.ini."},
+  {"UPDATE_CHECK", "Checks the online update info file (UPDATE_URL) for newer firmware."},
+  {"UPDATE [url]", "Installs what UPDATE_CHECK found, or the .bin at <url> (no version or MD5 check). Restarts when done."},
+  {"UPDATE_URL [url]", "Shows, or sets and saves, the address of the online update info file."},
+  {"UPDATE_AUTO ON|OFF", "Turns the automatic daily update check (and the main page's banner) on or off and saves the setting."},
 };
 const byte commandTableSize = sizeof(commandTable) / sizeof(commandTable[0]);
 
@@ -96,17 +114,29 @@ void commandError(const String &reason) {
 // except while a PUT transfer is in progress, when incoming bytes are the file's raw
 // content instead and go straight to putFile until the expected count is reached.
 void readSerialCommands() {
+  // A PUT whose data stops arriving (USB unplugged, deploy tool closed mid-transfer)
+  // used to leave every later byte - commands included - going into the file until a
+  // reboot. Give up after PUT_TIMEOUT_MS of silence; the real file is untouched.
+  if(putBytesRemaining > 0 && millis() - putLastByteAt > PUT_TIMEOUT_MS) {
+    putFile.close();
+    LittleFS.remove(putTempPath);
+    currentCommandLine = putEchoLine;
+    commandError("timed out with " + String(putBytesRemaining) + " bytes still to come - file not changed");
+    putBytesRemaining = 0;
+  }
+
   while(Serial.available()) {
     if(putBytesRemaining > 0) {
       putFile.write((uint8_t)Serial.read());
+      putLastByteAt = millis();
       putBytesRemaining--;
       if(putBytesRemaining == 0) {
         putFile.close();
-        if(LittleFS.exists(putTargetPath))
-          LittleFS.remove(putTargetPath);
-        LittleFS.rename(putTempPath, putTargetPath);
         currentCommandLine = putEchoLine;
-        commandOK();
+        if(put_commit())
+          commandOK();
+        else
+          commandError(F("received, but couldn't replace the file"));
       }
       continue;
     }
@@ -180,6 +210,14 @@ void processCommand(String cmd) {
     cmd_setPatternCmd(command.charAt(1) - '0', args);
   } else if(command == "ARMS") {
     cmd_arms();
+  } else if(command == "UPDATE_CHECK") {
+    cmd_updateCheck();
+  } else if(command == "UPDATE") {
+    cmd_update(args);
+  } else if(command == "UPDATE_URL") {
+    cmd_updateUrl(args);
+  } else if(command == "UPDATE_AUTO") {
+    cmd_updateAuto(args);
   } else if(command == "DEBUG") {
     cmd_setDebug(args);
   } else {
@@ -276,7 +314,7 @@ void cmd_info() {
     cmdOut->println(F("off"));
   } else if(!wifi_connected) {
     cmdOut->println(F("connecting..."));
-  } else if(WiFi.getMode() == WIFI_AP) {
+  } else if(hotspot_mode()) {
     cmdOut->println(WiFi.softAPIP());
   } else {
     cmdOut->println(WiFi.localIP());
@@ -381,10 +419,10 @@ void cmd_put(String args) {
     // counts DOWN to zero; it would never fire if it started there, so an empty
     // file needs to be handled here instead, not left to that loop.
     putFile.close();
-    if(LittleFS.exists(putTargetPath))
-      LittleFS.remove(putTargetPath);
-    LittleFS.rename(putTempPath, putTargetPath);
-    commandOK();
+    if(put_commit())
+      commandOK();
+    else
+      commandError(F("couldn't replace the file"));
     return;
   }
 
@@ -392,6 +430,7 @@ void cmd_put(String args) {
   // (see readSerialCommands()), not here - this just starts the transfer.
   putEchoLine = currentCommandLine;
   putBytesRemaining = size;
+  putLastByteAt = millis();
 }
 
 // CAT <filename>
@@ -444,6 +483,12 @@ void cmd_rm(String args) {
 // caller gets confirmation before the connection drops, then restarts.
 void cmd_reboot() {
   commandOK();
+  if(processingViaSingleShot) {
+    // web console, /api or I2C: restarting right here would cut off the answer - let
+    // loop() do it a second from now instead (see rebooting in loop())
+    rebooting = true;
+    return;
+  }
   Serial.flush();
   delay(100);
   ESP.restart();
@@ -472,7 +517,7 @@ void cmd_sensorEnable(String args) {
 // TEST <arm 0-3>|ALL - starts the configured test cycle count (same test_run field
 // as the web UI and OLED's own Test button) on one arm, or all four sequentially.
 // Non-blocking - see startArmTest() in arm.ino. This only kicks the sequence off;
-// loop() carries it out one move per second from here, same as the web UI's own
+// loop() carries it out one move every 400ms from here, same as the web UI's own
 // Test button does, so this returns (and prints OK) immediately rather than
 // waiting for the test to actually finish.
 void cmd_test(String args) {
@@ -617,6 +662,65 @@ void cmd_setDebug(String args) {
     return;
   }
   DEBUG = constrain(level, 0, 10);
+  save_config(LittleFS, "/config.ini");
+  commandOK();
+}
+
+// UPDATE_CHECK - see updater.ino.
+void cmd_updateCheck() {
+  update_check();
+  cmdOut->println(update_summary());
+  if(update_state_is("error"))
+    commandError(F("check failed"));
+  else
+    commandOK();
+}
+
+// UPDATE [url] - installs what UPDATE_CHECK found, or a .bin straight from <url> (for
+// testing builds - no version or MD5 check). Blocks until done; restarts on success.
+void cmd_update(String args) {
+  args.trim();
+  if(args.length()) {
+    update_flash(args, "", 0);
+  } else if(update_state_is("available")) {
+    update_install_latest();
+  } else {
+    commandError(F("nothing to install - send UPDATE_CHECK first, or UPDATE <url>"));
+    return;
+  }
+  if(update_state_is("done"))
+    commandOK(); // loop() restarts straight after this
+  else
+    commandError(update_summary());
+}
+
+// UPDATE_URL [url]
+void cmd_updateUrl(String args) {
+  args.trim();
+  if(args.length()) {
+    if(!args.startsWith("http://")) {
+      commandError(F("address must start with http:// (https isn't supported - see updater.ino)"));
+      return;
+    }
+    update_url = args;
+    save_config(LittleFS, "/config.ini");
+  }
+  cmdOut->println(update_url);
+  commandOK();
+}
+
+// UPDATE_AUTO ON|OFF
+void cmd_updateAuto(String args) {
+  args.trim();
+  args.toUpperCase();
+  if(args == "ON" || args == "1") {
+    update_auto = true;
+  } else if(args == "OFF" || args == "0") {
+    update_auto = false;
+  } else {
+    commandError(F("usage: UPDATE_AUTO ON|OFF"));
+    return;
+  }
   save_config(LittleFS, "/config.ini");
   commandOK();
 }

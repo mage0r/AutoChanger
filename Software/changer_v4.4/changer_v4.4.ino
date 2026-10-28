@@ -18,7 +18,7 @@
 
 // Set our version number.  Don't forget to update when featureset changes
 #define PROJECT "AutoChanger"
-#define VERSION "V.4.3.4"
+#define VERSION "V.4.4.2"
 
 #include <Wire.h>
 #include <Bounce2.h>
@@ -230,11 +230,17 @@ void setup() {
   // I can't explain this, but if the display is set up after the servos it all falls apart
   setup_display();
 
-  // mounts LittleFS, carrying files across from a pre-4.3 LittleFS filesystem if
-  // that's what's on the partition - see filesystem.ino
+  // mounts LittleFS, carrying files across from the SPIFFS filesystem older firmware
+  // (4.2.x and earlier) used, if that's what's on the partition - see filesystem.ino
   if(!mount_filesystem()) {
-    weblog.println(F("Filesystem mount failed!"));
-    return;
+    // Carry on rather than stopping here: returning used to skip the interrupts,
+    // buttons, encoder, patterns and servos, leaving a unit that did nothing at all.
+    // Without a filesystem it runs on the built-in defaults; nothing can be saved,
+    // and the web pages are missing (Serial still works). Usually a wrong Tools >
+    // Partition Scheme / Flash Size when it was flashed.
+    weblog.println(F("Filesystem mount failed! Running on defaults - nothing will be saved."));
+    display_message("FS ERROR");
+    delay(2000);
   } else {
     weblog.print(F("LittleFS Total: "));
     weblog.print(LittleFS.totalBytes() / 1024);
@@ -243,6 +249,7 @@ void setup() {
     weblog.println(F(" KB"));
     load_config(LittleFS, "/config.ini");
     create_missing_pages();
+    update_boot(); // first boot after an online update: refresh the web pages - see updater.ino
     log_page_status();
   }
 
@@ -258,17 +265,6 @@ void setup() {
   setup_buttons();
 
   setup_patterns();
-
-  // quick restore defaults.
-  if(!digitalRead(BUTTON_1)) {
-    RestoreDefault(0);
-  } else if(!digitalRead(BUTTON_2)) {
-    RestoreDefault(1);
-  } else if(!digitalRead(BUTTON_3)) {
-    RestoreDefault(2);
-  } else if(!digitalRead(BUTTON_4)) {
-    RestoreDefault(3);
-  }
 
   build_temp_pattern();
 
@@ -288,7 +284,9 @@ void setup() {
 
 void loop() {
   if(rebooting) {
-    delay(100);
+    // a moment for whatever asked for this (a web page, an /api or I2C REBOOT) to
+    // get its answer out first
+    delay(1000);
     ESP.restart();
   }
 
@@ -301,6 +299,7 @@ void loop() {
   process_sensor();
 
   run_web_actions(); // anything the web UI asked for since the last pass - see webactions.ino
+  api_loop(); // commands sent to /api - see api.ino
   captive_portal_loop(); // hotspot mode: point every DNS lookup at us - see wifi.ino
 
   if(pagesFixPending) {
@@ -308,7 +307,7 @@ void loop() {
     update_default_pages();
   }
 
-  if(servoTestPending && runEvery(1000, &run400)) {
+  if(servoTestPending && runEvery(400, &run400)) { // one test move every 400ms
     testCycleArm(servoTestArm, test_run);
   }
 
@@ -360,6 +359,11 @@ void loop() {
         start_hotspot();
       }
     }
+    // In hotspot mode with a network configured (e.g. the router was still booting
+    // after a power cut): keep retrying that network - see wifi.ino
+    hotspot_retry_loop();
+    // automatic daily check for new firmware (runs on its own task) - see updater.ino
+    update_auto_loop();
   }
 
   // check if we need to do ota activities.

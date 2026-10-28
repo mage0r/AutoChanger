@@ -112,7 +112,8 @@ void wipe_pattern(byte button) {
   patterns[button].length = 0;
 }
 
-// This is triggered on a reboot.  maybe switch it to a menu item?
+// Puts pattern <button> back to its built-in default (in RAM only - callers save).
+// Used by RES on the program page, FIX, and when patterns.txt is missing.
 void RestoreDefault(byte button) {
   // Restore the default patterns!
 
@@ -126,9 +127,6 @@ void RestoreDefault(byte button) {
   strncpy(patterns[button].steps, defaultPattern[button], MAX_PATTERN_LENGTH);
   patterns[button].steps[MAX_PATTERN_LENGTH] = '\0';
   patterns[button].length = strlen(patterns[button].steps);
-
-  // Write them back to our ram
-  //save_patterns(LittleFS, "/patterns2.txt");
 
   if(DEBUG) {
     weblog.print(F("Default Pattern restored for Pattern "));
@@ -269,7 +267,7 @@ void load_patterns(fs::FS &fs, const char * path) {
   weblog.println(F("Pattern Load Complete."));
 }
 
-// Written via SafeFile (safefile.h): a power cut mid-save leaves the previous file.
+// Written via SafeFile (Safefile.h): a power cut mid-save leaves the previous file.
 // One line per pattern; an empty pattern is a blank line.
 void save_patterns(fs::FS &fs, const char * path) {
   String out = "";

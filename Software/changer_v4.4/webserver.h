@@ -10,7 +10,7 @@
 #include <Update.h>
 #include "FS.h"
 #include <LittleFS.h>
-#include "safefile.h"
+#include "Safefile.h"
 #include <WiFiAP.h>
 #include <ArduinoOTA.h>
 #include "base64.hpp"
@@ -21,6 +21,9 @@ String http_username;
 String http_password;
 String allowedExtensionsForEdit;
 String jquery;
+String update_url; // address of the online update info file - see updater.ino
+bool update_auto = true; // check for new firmware by itself, daily - see updater.ino
+#define UPDATE_URL_DEFAULT "http://autochanger.mage0r.net/latest.json" // plain http - see updater.ino
 
 String textareaContent = "";
 String savePath = "";
@@ -709,7 +712,7 @@ function testAllArms(){
 function previewArm(n, field){
   var val = document.getElementById('arm'+n+field).value;
   if(val === '') return;
-  fetch('/servo_preview?arm=' + n + '&value=' + encodeURIComponent(val));
+  adminFetch('/servo_preview?arm=' + n + '&value=' + encodeURIComponent(val));
 }
 var scanPolls = 0;
 function startScan() {
@@ -778,7 +781,7 @@ function toggleEdit(n){
     field.focus();
     btn.textContent = 'Save';
   } else {
-    fetch('/setpattern?n='+n+'&steps='+encodeURIComponent(field.value.trim())).then(function(){
+    adminFetch('/setpattern?n='+n+'&steps='+encodeURIComponent(field.value.trim())).then(function(){
       field.disabled = true;
       btn.textContent = 'Edit';
       refreshStatus();
@@ -805,6 +808,96 @@ function buildSequenceWindow(patternStr, step, length) {
     parts.push('<span class="seq-digit d' + dist + '">' + patternStr[idx] + '</span>');
   }
   return parts.join('');
+}
+// Online firmware update (System tab) - see updater.ino. Check and Install need the
+// admin login; /update_status is polled while either is running. No percent sign
+// anywhere here (this page goes through the template processor), hence fromCharCode.
+var updPoll = null;
+function updRender(s){
+  var msg = document.getElementById('updMsg');
+  var btn = document.getElementById('updInstallBtn');
+  var prog = document.getElementById('updProg');
+  document.getElementById('updCheckBtn').disabled =
+    (s.state === 'checking' || s.state === 'downloading' || s.state === 'done');
+  btn.style.display = (s.state === 'available') ? '' : 'none';
+  prog.style.display = (s.state === 'downloading') ? '' : 'none';
+  if(s.state === 'checking'){
+    msg.textContent = 'Checking...';
+  } else if(s.state === 'uptodate'){
+    msg.textContent = 'Up to date - the latest version is ' + s.latest + '.';
+  } else if(s.state === 'available'){
+    msg.textContent = s.latest + ' is available.' + (s.notes ? ' ' + s.notes : '');
+    btn.textContent = 'Install ' + s.latest;
+  } else if(s.state === 'downloading'){
+    var kb = Math.round(s.received / 1024) + ' KB';
+    if(s.progress >= 0){
+      prog.value = s.progress;
+      msg.textContent = 'Installing ' + s.latest + ' - ' + s.progress + String.fromCharCode(37) +
+        ' (' + kb + '). Don\'t switch the unit off.';
+    } else {
+      prog.removeAttribute('value'); // size unknown - an animated "busy" bar
+      msg.textContent = 'Installing ' + s.latest + ' - ' + kb + ' so far. Don\'t switch the unit off.';
+    }
+  } else if(s.state === 'done'){
+    msg.textContent = 'Installed ' + s.latest + '. Restarting - this page reloads when the unit is back.';
+  } else if(s.state === 'error'){
+    msg.textContent = 'Update failed: ' + s.error;
+  } else {
+    msg.textContent = '';
+  }
+}
+function updPollStatus(){
+  fetch('/update_status').then(function(r){ return r.json(); }).then(function(s){
+    if(updPoll && updPoll.waitingForRestart){
+      if(s.state !== 'done') location.reload(); // it's back, on the new firmware
+      return;
+    }
+    updRender(s);
+    if(s.state === 'checking' || s.state === 'downloading')
+      return; // keep polling
+    if(s.state === 'done'){
+      updPoll.waitingForRestart = true; // keep polling until the unit answers again
+      return;
+    }
+    clearInterval(updPoll.timer);
+    updPoll = null;
+  }).catch(function(){ /* restarting or busy - try again next poll */ });
+}
+// On page load: show what the unit already knows (e.g. the automatic check found an
+// update, so the Install button is there straight away).
+function updInit(){
+  fetch('/update_status').then(function(r){ return r.json(); }).then(function(s){
+    updRender(s);
+    if(s.state === 'checking' || s.state === 'downloading')
+      updStartPolling();
+  }).catch(function(){});
+}
+function updStartPolling(){
+  if(!updPoll)
+    updPoll = {timer: setInterval(updPollStatus, 1000), waitingForRestart: false};
+  updPollStatus();
+}
+function updRequest(url, options){
+  adminFetch(url, options).then(function(r){
+    if(r.status === 401){
+      alert('Login failed - check username and password.');
+      return;
+    }
+    if(!r.ok){
+      r.text().then(function(t){ document.getElementById('updMsg').textContent = t; });
+      return;
+    }
+    updStartPolling();
+  });
+}
+function checkUpdate(){
+  updRequest('/update_check');
+}
+function installUpdate(){
+  if(!confirm('Install the update now? It takes about a minute. The buttons, screen and ' +
+              'carriage sensor stop while it installs, then the unit restarts.'))
+    return;
+  updRequest('/update_install', {method: 'POST'});
 }
 function refreshStatus(){
   fetch('/status').then(function(r){return r.json();}).then(function(s){
@@ -843,6 +936,8 @@ setInterval(refreshStatus, 1000);
 var dirtyTrackers = {};
 
 document.addEventListener('DOMContentLoaded', function(){
+  updInit();
+
   // If the page is opened with a tab named in the URL (e.g. bookmarking or
   // sharing a link straight to "/#arms"), land there instead of always
   // resetting to Patterns.
@@ -1091,6 +1186,12 @@ RAM: %GETFREEHEAP% / %GETTOTALHEAP%<br>PSRAM: %GETFREEPSRAM% / %GETTOTALPSRAM%</
 </tr></table></fieldset>
 
 <fieldset><legend>Firmware Update</legend>
+<p class="note">Installed: %VERSION%. Online updates come from %UPDATE_URL% - %UPDATE_AUTO_TEXT%</p>
+<button type="button" class="btn" id="updCheckBtn" onclick="checkUpdate()">Check for update</button>
+<button type="button" class="btn" id="updInstallBtn" onclick="installUpdate()" style="display:none">Install</button>
+<p class="note" id="updMsg"></p>
+<progress id="updProg" max="100" value="0" style="display:none;width:250px"></progress>
+<p class="note">Or install a .bin file from this computer:</p>
 <form method="POST" action="/update" enctype="multipart/form-data">
 <input type="file" id="update" name="update">
 <input type="submit" value="Update" onclick="return validateUpdate()" class="btn">

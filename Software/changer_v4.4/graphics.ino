@@ -243,7 +243,7 @@ void wifi_display() {
     u8g2.setCursor(10, 30);
     if(!wifi_connected) {
       u8g2.print("connecting...");
-    } else if(WiFi.getMode() == WIFI_AP) {
+    } else if(hotspot_mode()) {
       u8g2.print(WiFi.softAPIP().toString());
     } else {
       u8g2.print(WiFi.localIP().toString());
@@ -352,7 +352,7 @@ uint32_t display_state_hash() {
   h = display_hash(h, &test_run, sizeof(test_run));
   h = display_hash(h, &wifi_enabled, sizeof(wifi_enabled));
   h = display_hash(h, &wifi_connected, sizeof(wifi_connected));
-  uint32_t ip = (WiFi.getMode() == WIFI_AP) ? (uint32_t)WiFi.softAPIP() : (uint32_t)WiFi.localIP();
+  uint32_t ip = hotspot_mode() ? (uint32_t)WiFi.softAPIP() : (uint32_t)WiFi.localIP();
   h = display_hash(h, &ip, sizeof(ip));
   h = display_hash(h, &i2c_enabled, sizeof(i2c_enabled));
   h = display_hash(h, &i2c2_address, sizeof(i2c2_address));
@@ -366,6 +366,20 @@ uint32_t display_state_hash() {
 
 #define DISPLAY_REFRESH_MS 5000 // redraw anyway this often, in case the panel glitched
 
+bool displayForceRedraw = false; // set after something drew over the normal pages
+
+// Shows one big word, centred, in place of the normal page - for when loop() is about
+// to be busy for a while (e.g. an online update) and display_page() won't run. The
+// normal page comes back on the next display_page() after loop() resumes.
+void display_message(const char *msg) {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_fub14_tr);
+  int x = (u8g2.getDisplayWidth() - u8g2.getStrWidth(msg)) / 2;
+  u8g2.drawStr(x < 0 ? 0 : x, 24, msg);
+  u8g2.sendBuffer();
+  displayForceRedraw = true;
+}
+
 // All the displays
 // terrible Idea.  I regret it already.
 void display_page() {
@@ -373,8 +387,9 @@ void display_page() {
   static unsigned long lastDraw = 0;
 
   uint32_t h = display_state_hash();
-  if(h == lastHash && millis() - lastDraw < DISPLAY_REFRESH_MS)
+  if(h == lastHash && millis() - lastDraw < DISPLAY_REFRESH_MS && !displayForceRedraw)
     return; // nothing on screen would change
+  displayForceRedraw = false;
   lastHash = h;
   lastDraw = millis();
 

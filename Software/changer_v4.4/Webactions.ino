@@ -35,7 +35,9 @@ public:
     WIFI_OFF,
     I2C_ENABLE,     // a = 1 on / 0 off
     I2C_ADDRESS,    // a = address
-    FORMAT
+    FORMAT,
+    UPDATE_CHECK,   // online update - see updater.ino
+    UPDATE_INSTALL
   };
 
 private:
@@ -117,6 +119,12 @@ private:
         weblog.println(F("Formatting the filesystem and restarting..."));
         LittleFS.format();
         ESP.restart();
+        break;
+      case UPDATE_CHECK:
+        update_check();
+        break;
+      case UPDATE_INSTALL:
+        update_install_latest();
         break;
     }
   }

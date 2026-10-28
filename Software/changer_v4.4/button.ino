@@ -295,6 +295,13 @@ void programMode() {
     // We've just added an extra entry
     for(int i = 0; i < 4; i++) {
       if(buttonExec[i] && buttonState[i]) {
+          // steps[] holds MAX_PATTERN_LENGTH steps plus the '\0'. One more would put the
+          // terminator into .length (the byte straight after steps[]) and empty the pattern.
+          if(patterns[currentPattern].length >= MAX_PATTERN_LENGTH) {
+            if(DEBUG)
+              weblog.println(F("Pattern full - entry not added."));
+            break;
+          }
           patterns[currentPattern].steps[patterns[currentPattern].length] = '0' + i;
           patterns[currentPattern].length++;
           patterns[currentPattern].steps[patterns[currentPattern].length] = '\0';

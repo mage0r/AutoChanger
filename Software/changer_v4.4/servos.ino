@@ -93,13 +93,12 @@ void previewServo(int arm, int value) {
 void detachServo() {
   
   if(servoTimeout > 0 && millis() - servoTimeout > 400) {
-    for (int x = 0; x < maxServo; x++) {
+    for (int x = 0; x < maxServo; x++)
       pwm.setPWM(x, 0, 0);
-      if(DEBUG) {
-        weblog.print(F("Detach Servo: "));
-        weblog.println(x);
-      }
-    }
+    // one line, and only at DEBUG 2 - it follows every move, so at DEBUG 1 it used
+    // to be four lines per arm switch crowding the 4KB web log
+    if(DEBUG >= 2)
+      weblog.println(F("Servos detached."));
     servoTimeout = 0;
   }
   
@@ -234,7 +233,10 @@ void load_servos(fs::FS &fs, const char * path) {
 void set_default_servo_values(int arm) {
     servos[arm][0] = 150; // 160 // 170
     servos[arm][1] = 520; //470 //450
-    servos[arm][2] = 650;
+    // 630 = ~2.56ms at 60Hz. It was 650 (~2.65ms) - a unit with no servos.txt drives
+    // every arm here on first boot, so too far a default could leave them stalled
+    // against the servo's end stop.
+    servos[arm][2] = 630;
 }
 
 // Parses one field: digits only, no sign, not empty. toInt() alone would accept
@@ -300,7 +302,7 @@ void default_servos(){
     save_servos(LittleFS, "/servos.txt");
 }
 
-// Written via SafeFile (safefile.h): a power cut mid-save leaves the previous file.
+// Written via SafeFile (Safefile.h): a power cut mid-save leaves the previous file.
 void save_servos(fs::FS &fs, const char * path) {
   String out = "";
   for(int x = 0; x < 4; x++) {

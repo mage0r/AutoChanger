@@ -19,6 +19,9 @@ void setup_config() {
 
   jquery = "/jquery-3.6.3.min.js";
 
+  update_url = UPDATE_URL_DEFAULT;
+  update_auto = true;
+
   test_run = 10;
 
   wifi_enabled = true;
@@ -116,6 +119,10 @@ void assign_config(String name, String value) {
     allowedExtensionsForEdit = value;
   }else if (name == "jquery") {
     jquery = value;
+  }else if (name == "update_url") {
+    update_url = value;
+  } else if(name == "update_auto") {
+    update_auto = value.toInt();
   }else if(name == "test_run") {
     test_run = value.toInt();
   } else if(name == "wifi_enabled") {
@@ -144,7 +151,7 @@ void assign_config(String name, String value) {
 
 // We use this function to effectively create a default
 // config.ini file.
-// Written via SafeFile (safefile.h): a power cut mid-save leaves the previous file.
+// Written via SafeFile (Safefile.h): a power cut mid-save leaves the previous file.
 void save_config(fs::FS &fs, const char * path) {
   String temp_message = "";
   temp_message += "ssid="+ssid+"\n";
@@ -153,6 +160,8 @@ void save_config(fs::FS &fs, const char * path) {
   temp_message += "http_password="+http_password+"\n";
   temp_message += "allowedExtensionsForEdit="+allowedExtensionsForEdit+"\n";
   temp_message += "jquery="+jquery+"\n";
+  temp_message += "update_url="+update_url+"\n";
+  temp_message += "update_auto="+(String)update_auto+"\n";
   temp_message += "test_run="+(String)test_run+"\n";
   temp_message += "wifi_enabled="+(String)wifi_enabled+"\n";
   temp_message += "i2c_enabled="+(String)i2c_enabled+"\n";

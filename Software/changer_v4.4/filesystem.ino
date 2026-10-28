@@ -1,7 +1,7 @@
 // Mounting the filesystem, and the one-off move from SPIFFS (up to 4.2.x) to LittleFS
 // (4.3 onwards).
 //
-// Both use the same "spiffs" flash partition, so the first boot of 4.3 on a unit that
+// Both use the same "spiffs" flash partition, so the first boot of 4.3 or later on a unit that
 // ran older firmware finds a SPIFFS filesystem LittleFS can't mount. Rather than just
 // formatting it (losing WiFi settings, patterns and arm calibration, and dropping the
 // unit into hotspot mode), we mount it as SPIFFS, copy the files into RAM, format the

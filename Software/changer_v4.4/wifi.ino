@@ -12,6 +12,12 @@ bool dnsRunning = false;
 unsigned long wifiBeginAt = 0;  // when WiFi.begin() was last issued; 0 = not yet in this window
 #define WIFI_RETRY_MS 10000      // re-issue WiFi.begin() this often while it's failing
 
+// Retrying the configured network while in hotspot mode - see hotspot_retry_loop().
+#define HOTSPOT_RETRY_MS 60000   // try the configured network this often
+#define HOTSPOT_ATTEMPT_MS 15000 // give each try this long before going back to waiting
+unsigned long hotspotRetryAt = 0; // when the last try started (or the hotspot came up)
+bool hotspotAttempting = false;
+
 // True while we're running our own hotspot. Tests the AP bit rather than comparing
 // with WIFI_AP: the hotspot runs as WIFI_AP_STA (see setup_AP()), so a "== WIFI_AP"
 // test would say we weren't - which is what sent a scan's next page load to the
@@ -218,8 +224,10 @@ void setup_AP() {
 
   // Open network (no password) - it only ever serves the join page.
   if (!WiFi.softAP(PROJECT)) {
-    weblog.println(F("Soft AP creation failed."));
-    while(1);
+    // This used to hang here forever with a frozen screen - restart and try again.
+    weblog.println(F("Soft AP creation failed - restarting."));
+    delay(1000);
+    ESP.restart();
   }
 
   weblog.println(F("Success!"));
@@ -229,6 +237,52 @@ void setup_AP() {
   start_network_services();
 
   wifi_connected = true;
+  hotspotRetryAt = millis(); // first retry of the configured network a minute from now
+  hotspotAttempting = false;
+}
+
+// Called once a second from loop(). If we fell back to the hotspot even though a
+// network is configured - typically a power cut, where the router takes longer than
+// our 30 seconds to come back - keep trying that network instead of staying a hotspot
+// until someone reboots the unit. Tries only while nobody is connected to the hotspot:
+// the station side joining a network can move the radio to another channel, which
+// would drop anyone using the join page. Once it connects, the hotspot is shut down;
+// the web server, OTA and mDNS were started on all interfaces and carry on as is.
+void hotspot_retry_loop() {
+  if(!wifi_enabled || !hotspot_mode() || ssid == PROJECT || prescanRunning) {
+    hotspotAttempting = false;
+    return;
+  }
+
+  if(WiFi.status() == WL_CONNECTED) {
+    weblog.print(F("WiFi connected from hotspot mode. IP address: "));
+    weblog.println(WiFi.localIP());
+    hotspotAttempting = false;
+    WiFi.softAPdisconnect(true); // AP off, station stays - captive_portal_loop() stops DNS
+    WiFi.mode(WIFI_STA);
+    return;
+  }
+
+  if(hotspotAttempting) {
+    // someone joined the hotspot, or this try has had long enough
+    if(WiFi.softAPgetStationNum() > 0 || millis() - hotspotRetryAt >= HOTSPOT_ATTEMPT_MS) {
+      WiFi.disconnect(false); // station side only - the hotspot stays up
+      hotspotAttempting = false;
+      if(DEBUG)
+        weblog.println(F("Hotspot mode: configured WiFi not reachable yet."));
+    }
+    return;
+  }
+
+  if(WiFi.softAPgetStationNum() == 0 && millis() - hotspotRetryAt >= HOTSPOT_RETRY_MS) {
+    if(DEBUG) {
+      weblog.print(F("Hotspot mode: retrying WiFi - "));
+      weblog.println(ssid);
+    }
+    WiFi.begin(ssid, wifi_password);
+    hotspotRetryAt = millis();
+    hotspotAttempting = true;
+  }
 }
 
 void ota_loop() {

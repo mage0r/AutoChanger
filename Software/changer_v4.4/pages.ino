@@ -141,15 +141,41 @@ String pageUpdateBanner() {
   return s;
 }
 
-// Serves the main page (for both "/" and "/index.html"), with the update banner when
-// the stored page is out of date. no-store stops the browser showing a cached copy
-// from before a firmware update - the page is tiny to regenerate anyway.
+// Shown when the automatic (or a manual) check found newer firmware - see updater.ino.
+// Goes through the template processor like the rest of the page, so any '%' in the
+// notes from latest.json is escaped.
+String firmwareUpdateBanner(const String &latest, const String &notes) {
+  String s = F("<div id=\"fwUpdateBanner\" style=\"background:#e3f0ff;border:1px solid #6a9fd8;"
+               "color:#123a63;padding:10px 14px;margin:0 0 10px;max-width:500px;box-sizing:border-box;"
+               "font-family:Arial,sans-serif;font-size:14px\"><b>Firmware ");
+  s += Tar::htmlEscape(latest);
+  s += F(" is available</b> (this unit has " VERSION ").");
+  if(notes.length()) {
+    s += F(" ");
+    s += Tar::htmlEscape(notes);
+  }
+  s += F(" <a href=\"/#status\" onclick=\"if(typeof showTab=='function'){showTab('status');return false;}\">"
+         "Install it on the System tab</a></div>");
+  s.replace("%", "&#37;");
+  return s;
+}
+
+// Serves the main page (for both "/" and "/index.html"), with banners spliced in when
+// the stored page is out of date and/or newer firmware is available. no-store stops
+// the browser showing a cached copy - the page is tiny to regenerate anyway.
 void sendIndexPage(AsyncWebServerRequest *request) {
+  String banner = "";
+  if(indexOutdated())
+    banner += pageUpdateBanner();
+  String latest, notes;
+  if(update_available(latest, notes))
+    banner += firmwareUpdateBanner(latest, notes);
+
   AsyncWebServerResponse *response;
-  if(!indexOutdated()) {
+  if(banner.length() == 0) {
     response = request->beginResponse(LittleFS, "/index.html", "text/html", false, processor);
   } else {
-    auto stream = std::make_shared<BannerPageStream>(pageUpdateBanner());
+    auto stream = std::make_shared<BannerPageStream>(banner);
     // length 0 + a template processor = chunked response, ended when fill() returns 0
     response = request->beginResponse("text/html", 0,
       [stream](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
@@ -190,7 +216,7 @@ void log_page_status() {
     : F("Web pages: match firmware."));
 }
 
-// Rewrites every built-in page from the firmware, each via SafeFile (safefile.h) so a
+// Rewrites every built-in page from the firmware, each via SafeFile (Safefile.h) so a
 // power cut mid-way leaves the old page rather than half a new one. Called from loop().
 void update_default_pages() {
   byte updated = 0;

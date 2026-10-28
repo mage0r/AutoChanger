@@ -72,6 +72,10 @@ String processor(const String& var)
     return String(ESP.getSketchSize() / 1024) + " KB";
   if(var == "FREESKETCHSPACE")
     return String(ESP.getFreeSketchSpace() / 1024) + " KB";
+  if(var == "UPDATE_URL")
+    return Tar::htmlEscape(update_url);
+  if(var == "UPDATE_AUTO_TEXT")
+    return update_auto ? "checked automatically once a day." : "automatic checks are off (UPDATE_AUTO ON to turn them on).";
   if(var == "IPADDRESS") {
     if(!wifi_enabled)
       return "off";
@@ -88,14 +92,18 @@ String processor(const String& var)
 String edit_processor(const String& var) {
   // We need a separate processor for when we are editing a file
   // otherwise the template system wipes out the template declarations
+  // Escaped: a file containing "</textarea>" used to end the editor early (and
+  // anything after it ran as part of the page), and entities like "&amp;" were
+  // decoded by the browser, so saving silently changed them. Inside a textarea the
+  // browser decodes these back, so what's saved is exactly what was in the file.
   if(var == "TEXTAREA_CONTENT")
-    return textareaContent;
+    return Tar::htmlEscape(textareaContent);
   if(var == "ALLOWED_EXTENSIONS_EDIT")
-    return allowedExtensionsForEdit;
+    return Tar::htmlEscape(allowedExtensionsForEdit);
 
   if(var == "SAVE_PATH_INPUT") {
     if(savePath == "new.txt") {
-      savePathInput = "<input type=\"text\" id=\"save_path\" name=\"save_path\" value=\"" + savePath + "\" >";
+      savePathInput = "<input type=\"text\" id=\"save_path\" name=\"save_path\" value=\"" + Tar::htmlEscape(savePath) + "\" >";
     } else {
       savePathInput = "";
     }
@@ -215,9 +223,10 @@ void setupAsyncServer() {
   },
   [](AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
   {
-    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
-      return request->requestAuthentication();
-    }
+    // No response from here - an unauthenticated upload is just ignored, and the
+    // request handler above sends the 401 (one response per request).
+    if(!request->authenticate(http_username.c_str(), http_password.c_str()))
+      return;
     if(!index) {
       weblog.print(F("Updating: "));
       weblog.println(filename.c_str());
@@ -247,7 +256,7 @@ void setupAsyncServer() {
     if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
       return request->requestAuthentication();
     }
-    request->send(200);
+    request->redirect("/manage"); // the only response - uploadFile() sends none
   }, uploadFile);
 
 
@@ -255,6 +264,8 @@ void setupAsyncServer() {
     if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
       return request->requestAuthentication();
     }
+    if(!request->hasParam("edit_path"))
+      return request->send(400, "text/plain", "missing edit_path");
     String inputMessage = request->getParam("edit_path")->value();
 
     if(inputMessage =="new") {
@@ -289,10 +300,12 @@ void setupAsyncServer() {
     if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
       return request->requestAuthentication();
     }
-    String inputMessage = "/" + request->getParam("delete_path")->value();
+    if(!request->hasParam("delete_path"))
+      return request->send(400, "text/plain", "missing delete_path");
+    String name = request->getParam("delete_path")->value();
 
-    if(inputMessage !="choose") {
-      LittleFS.remove(inputMessage.c_str());
+    if(name != "choose") {
+      LittleFS.remove("/" + name);
     }
     request->redirect("/manage");
   });
@@ -301,12 +314,12 @@ void setupAsyncServer() {
     if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
       return request->requestAuthentication();
     }
+    if(!request->hasParam("download_path"))
+      return request->send(400, "text/plain", "missing download_path");
     String inputMessage = "/" + request->getParam("download_path")->value();
 
     
-    request->send(LittleFS, inputMessage, "application/octet-stream", true);
-
-    request->redirect("/manage");
+    request->send(LittleFS, inputMessage, "application/octet-stream", true); // the only response - no redirect after it
   });
 
 
@@ -591,7 +604,7 @@ void setupAsyncServer() {
     request->send(200, "text/plain", "OK"); // its output appears in the log
   });
 
-  // Returns everything currently held in weblog's ring buffer (see changer_v4.3.ino) -
+  // Returns everything currently held in weblog's ring buffer (see changer_v4.4.ino) -
   // the same content the physical USB serial monitor would show, as plain text,
   // oldest first. No auth - this never changes anything, same as /status.
   server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -655,8 +668,12 @@ void setupAsyncServer() {
   });
 
   // Moves one arm directly to a given PWM value - see previewServo() in servos.ino.
-  // No auth - momentary hardware action, same bar as /next/back/press/servo_test.
+  // Admin auth: the value is raw (only clamped to 0-4095, not to the arm's own travel),
+  // so this can drive an arm past its end stop - same bar as /servo_save.
   server.on("/servo_preview", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
+      return request->requestAuthentication();
+    }
     if(!request->hasParam("arm") || !request->hasParam("value")) {
       request->send(400, "text/plain", "missing arm/value");
       return;
@@ -832,7 +849,11 @@ void setupAsyncServer() {
     request->send(200);
   });
 
+  // Admin auth: saves to patterns.txt - persists a change, same bar as /servo_save.
   server.on("/setpattern", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
+      return request->requestAuthentication();
+    }
     if(!request->hasParam("n") || !request->hasParam("steps")) {
       request->send(400, "text/plain", "missing n or steps");
       return;
@@ -850,6 +871,42 @@ void setupAsyncServer() {
 
     request->send(200);
   });
+
+  // Online firmware update - see updater.ino. Check and install need admin auth (they
+  // fetch from the internet / replace the firmware) and are carried out by loop();
+  // status only reads, same as /status.
+  server.on("/update_check", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
+      return request->requestAuthentication();
+    }
+    String err = update_begin(false);
+    if(err.length())
+      return request->send(409, "text/plain", err);
+    if(!WebActions::push(WebActions::UPDATE_CHECK)) {
+      update_fail("busy, try again");
+      return request->send(503, "text/plain", "busy, try again");
+    }
+    request->send(200, "application/json", update_status_json());
+  });
+  server.on("/update_install", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
+      return request->requestAuthentication();
+    }
+    String err = update_begin(true);
+    if(err.length())
+      return request->send(409, "text/plain", err);
+    if(!WebActions::push(WebActions::UPDATE_INSTALL)) {
+      update_fail("busy, try again");
+      return request->send(503, "text/plain", "busy, try again");
+    }
+    request->send(200, "application/json", update_status_json());
+  });
+  server.on("/update_status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "application/json", update_status_json());
+  });
+
+  // /api - every Serial/I2C command over HTTP - see api.ino
+  setup_api_routes();
 
   // /backup and /restore - see backup.ino
   setupBackupRoutes();
@@ -896,27 +953,32 @@ String listDir(fs::FS &fs, const char * dirname, uint8_t levels) {
 
   File file = root.openNextFile();
   while(file) {
-    
+      // the name goes into a link, three JS URLs and the visible text - URL-encoded for
+      // the first four and HTML-escaped for the last, so a name with a quote, space,
+      // & or < in it can't break the table (or inject anything into the page)
+      String name = file.name();
+      String url = urlEncode(name);
+
       listenFiles += "\n            <tr>\n              <td id=\"first_td_th\">";
       listenFiles += "<a href='/";
-      listenFiles += file.name();
+      listenFiles += url;
       listenFiles += "'>";
-      listenFiles += file.name();
+      listenFiles += Tar::htmlEscape(name);
       listenFiles += "</a>";
 
       listenFiles += "</td>\n              <td>Size: ";
       listenFiles += convertFileSize(file.size());
       listenFiles += "</td>\n              <td id='center_td'>";
       listenFiles += "<input type='button' onclick='window.location.href=\"/download?download_path=";
-      listenFiles += file.name();
+      listenFiles += url;
       listenFiles += "\";' value='Download' download />";
       listenFiles += "</td>\n              <td id='center_td'>";
       listenFiles += "<input type='button' onclick='window.location.href=\"/edit?edit_path=";
-      listenFiles += file.name();
+      listenFiles += url;
       listenFiles += "\";' value='Edit' />";
       listenFiles += "</td>\n              <td id='center_td'>";
       listenFiles += "<input type='button' onclick='window.location.href=\"/delete?delete_path=";
-      listenFiles += file.name();
+      listenFiles += url;
       listenFiles += "\";' value='Delete' />";
       listenFiles += "</td>\n            </tr>\n";
     
@@ -924,6 +986,25 @@ String listDir(fs::FS &fs, const char * dirname, uint8_t levels) {
 
   }
   return listenFiles;  
+}
+
+// Percent-encodes everything but letters, digits and -_.~ - safe in a URL, and so
+// also inside a quoted HTML attribute or JS string.
+String urlEncode(const String &in) {
+  static const char hex[] = "0123456789ABCDEF";
+  String out;
+  out.reserve(in.length() * 3);
+  for(unsigned int i = 0; i < in.length(); i++) {
+    uint8_t c = in[i];
+    if(isAlphaNumeric(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+      out += (char)c;
+    } else {
+      out += '%';
+      out += hex[c >> 4];
+      out += hex[c & 15];
+    }
+  }
+  return out;
 }
 
 String readFile(fs::FS &fs, String path) {
@@ -961,18 +1042,18 @@ void writeFile(fs::FS &fs, String path, const char * message)
 
 void uploadFile(AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final) 
 {
-  if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
-    return request->requestAuthentication();
-  }
+  // No response from here - the /upload request handler sends the only one (the 401,
+  // or the redirect back to /manage).
+  if(!request->authenticate(http_username.c_str(), http_password.c_str()))
+    return;
   if(!index) {
     request->_tempFile = LittleFS.open("/" + filename, "w");
   }
-  if(len) {
+  if(len && request->_tempFile) {
     request->_tempFile.write(data, len);
   }
-  if(final) {
+  if(final && request->_tempFile) {
     request->_tempFile.close();
-    request->redirect("/manage");
   }
 }
 

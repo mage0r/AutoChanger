@@ -12,7 +12,7 @@
  *              loop() yet) - wait a moment and read again.
  *       0x01 - ready; every byte after this one is the response text, exactly what
  *              Serial would have printed for the same command (e.g.
- *              "INFO:OK\nProject: AutoChanger - V.4.2\n...").
+ *              "INFO:OK\nProject: AutoChanger - V.4.4.0\n...").
  *   - A ready response stays available - repeated reads return the same bytes -
  *     until the next command is written, at which point it reverts to "not ready"
  *     until that new command has been processed.
@@ -39,7 +39,7 @@
 #include <Wire.h>
 
 // I2C2_SDA / I2C2_SCL / I2C2_ADDRESS_DEFAULT / I2C2_RESPONSE_MAX are defined in
-// changer_v4.3.ino, alongside the rest of the port/pin allocations. The address
+// changer_v4.4.ino, alongside the rest of the port/pin allocations. The address
 // actually used, i2c2_address, is a runtime variable (also declared there) so it
 // can be overridden from config.ini - see assign_config()/save_config() in
 // config.ino.
