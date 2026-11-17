@@ -22,6 +22,13 @@ String http_password;
 String allowedExtensionsForEdit;
 String jquery;
 String update_url; // address of the online update info file - see updater.ino
+
+// Network identity - see wifi.ino and the WiFi tab. hostname is the mDNS name
+// (hostname.local), the DHCP name routers list, the OTA name and the hotspot's SSID.
+// static_* are kept even while DHCP is selected, so switching back pre-fills them.
+String hostname;
+bool static_ip = false;
+String static_addr, static_gateway, static_subnet, static_dns1, static_dns2;
 bool update_auto = true; // check for new firmware by itself, daily - see updater.ino
 #define UPDATE_URL_DEFAULT "http://autochanger.mage0r.net/latest.json" // plain http - see updater.ino
 
@@ -305,7 +312,7 @@ const char wifi_joining_html[] PROGMEM = R"rawliteral(
 <h2>Joining network...</h2>
 <p>The unit is attempting to connect. This hotspot will disconnect shortly.</p>
 <p>If it connects, find it on your regular network at its new address (check your
-router, or try <code>http://AutoChanger.local/</code>). If it can't connect within
+router, or try <code>http://%HOSTNAME%.local/</code>). If it can't connect within
 30 seconds, this hotspot comes back automatically so you can try again.</p>
 </body></html>)rawliteral";
 
@@ -534,6 +541,40 @@ function joinWifi(){
       setJoinStatus('Joining network - this page may stop responding if it switches ' +
         'networks. Check your router, or try http://AutoChanger.local/ shortly.');
     });
+}
+// Network Settings (WiFi tab) - see apply_network_settings() in wifi.ino.
+function netModeChanged(){
+  document.getElementById('netStatic').style.display =
+    (document.getElementById('netMode').value === 'static') ? '' : 'none';
+}
+function saveNetwork(){
+  var ids = {hostname: 'netHostname', mode: 'netMode', ip: 'netIp', gateway: 'netGateway',
+             subnet: 'netSubnet', dns1: 'netDns1', dns2: 'netDns2'};
+  var v = {}, parts = [];
+  for(var k in ids){
+    v[k] = document.getElementById(ids[k]).value.trim();
+    parts.push(k + '=' + encodeURIComponent(v[k]));
+  }
+  if(!confirm('Save these network settings and restart the unit?'))
+    return;
+  var status = document.getElementById('netStatus');
+  adminFetch('/network', {method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: parts.join('&')}).then(function(r){
+    if(r.status === 401){
+      alert('Login failed - check username and password.');
+      return;
+    }
+    return r.text().then(function(t){
+      if(!r.ok){
+        status.textContent = t;
+        return;
+      }
+      var next = 'http://' + (v.mode === 'static' ? v.ip : v.hostname + '.local') + '/';
+      status.textContent = 'Saved - restarting. Opening ' + next + ' in 15 seconds...';
+      setTimeout(function(){ window.location.href = next; }, 15000);
+    });
+  });
 }
 function disableWifi(){
   var checkbox = document.getElementById('wifiToggle');
@@ -937,6 +978,7 @@ var dirtyTrackers = {};
 
 document.addEventListener('DOMContentLoaded', function(){
   updInit();
+  netModeChanged();
 
   // If the page is opened with a tab named in the URL (e.g. bookmarking or
   // sharing a link straight to "/#arms"), land there instead of always
@@ -1028,6 +1070,41 @@ autocapitalize="off" autocorrect="off" spellcheck="false">
 </fieldset>
 <p class="note">Changing networks needs the admin login (set on the System tab) -
 you'll be asked the first time.</p>
+
+<fieldset><legend>Network Settings</legend>
+<label for="netHostname">Unit name</label>
+<input type="text" id="netHostname" value="%HOSTNAME%" maxlength="32"
+autocapitalize="off" autocorrect="off" spellcheck="false">
+<p class="note">Letters, numbers and hyphens. Used for http://<i>name</i>.local/, the name
+your router lists, Arduino IDE network uploads, and the setup hotspot.</p>
+<label for="netMode">IP address</label>
+<select id="netMode" onchange="netModeChanged()">
+<option value="dhcp" %NET_DHCP_SELECTED%>Automatic (DHCP)</option>
+<option value="static" %NET_STATIC_SELECTED%>Static</option>
+</select>
+<div id="netStatic">
+<label for="netIp">IP address</label>
+<input type="text" id="netIp" value="%NET_IP%" placeholder="192.168.1.50"
+autocapitalize="off" autocorrect="off" spellcheck="false">
+<label for="netGateway">Gateway</label>
+<input type="text" id="netGateway" value="%NET_GATEWAY%" placeholder="192.168.1.1"
+autocapitalize="off" autocorrect="off" spellcheck="false">
+<label for="netSubnet">Subnet mask</label>
+<input type="text" id="netSubnet" value="%NET_SUBNET%" placeholder="255.255.255.0"
+autocapitalize="off" autocorrect="off" spellcheck="false">
+<label for="netDns1">DNS server (optional - uses the gateway if blank)</label>
+<input type="text" id="netDns1" value="%NET_DNS1%"
+autocapitalize="off" autocorrect="off" spellcheck="false">
+<label for="netDns2">Second DNS server (optional)</label>
+<input type="text" id="netDns2" value="%NET_DNS2%"
+autocapitalize="off" autocorrect="off" spellcheck="false">
+</div>
+<button type="button" class="btn" onclick="saveNetwork()">Save &amp; Restart</button>
+<p class="note" id="netStatus"></p>
+<p class="note">If a static address is wrong the unit can't be reached over WiFi. Its
+current address is on its own WiFi menu page, and the serial command <code>NET DHCP</code>
+switches back to automatic.</p>
+</fieldset>
 
 <fieldset><legend>Disable WiFi</legend>
 <p class="note">Turns WiFi off completely. You'll lose this connection immediately, and

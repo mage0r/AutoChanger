@@ -72,6 +72,22 @@ String processor(const String& var)
     return String(ESP.getSketchSize() / 1024) + " KB";
   if(var == "FREESKETCHSPACE")
     return String(ESP.getFreeSketchSpace() / 1024) + " KB";
+  if(var == "HOSTNAME")
+    return Tar::htmlEscape(hostname);
+  if(var == "NET_DHCP_SELECTED")
+    return static_ip ? "" : "selected";
+  if(var == "NET_STATIC_SELECTED")
+    return static_ip ? "selected" : "";
+  if(var == "NET_IP")
+    return net_field(0);
+  if(var == "NET_GATEWAY")
+    return net_field(1);
+  if(var == "NET_SUBNET")
+    return net_field(2);
+  if(var == "NET_DNS1")
+    return net_field(3);
+  if(var == "NET_DNS2")
+    return net_field(4);
   if(var == "UPDATE_URL")
     return Tar::htmlEscape(update_url);
   if(var == "UPDATE_AUTO_TEXT")
@@ -903,6 +919,25 @@ void setupAsyncServer() {
   });
   server.on("/update_status", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send(200, "application/json", update_status_json());
+  });
+
+  // Unit name and static IP from the WiFi tab - see apply_network_settings() in
+  // wifi.ino. Saves, answers, then restarts so everything picks the new settings up.
+  server.on("/network", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if(!request->authenticate(http_username.c_str(), http_password.c_str())) {
+      return request->requestAuthentication();
+    }
+    auto arg = [request](const char *name) -> String {
+      return request->hasParam(name, true) ? request->getParam(name, true)->value() : String();
+    };
+    String err = apply_network_settings(arg("hostname"), arg("mode") == "static", arg("ip"),
+                                        arg("gateway"), arg("subnet"), arg("dns1"), arg("dns2"));
+    if(err.length())
+      return request->send(400, "text/plain", err);
+    AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", "Saved - restarting.");
+    response->addHeader("Connection", "close");
+    request->send(response);
+    rebooting = true; // loop() restarts a second from now
   });
 
   // /api - every Serial/I2C command over HTTP - see api.ino

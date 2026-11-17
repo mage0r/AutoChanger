@@ -94,6 +94,8 @@ const CommandHelp commandTable[] = {
   {"UPDATE_CHECK", "Checks the online update info file (UPDATE_URL) for newer firmware."},
   {"UPDATE [url]", "Installs what UPDATE_CHECK found, or the .bin at <url> (no version or MD5 check). Restarts when done."},
   {"UPDATE_URL [url]", "Shows, or sets and saves, the address of the online update info file."},
+  {"HOSTNAME [name]", "Shows, or sets and saves, the unit name (name.local, router list, OTA name, hotspot SSID). Send REBOOT to apply."},
+  {"NET [DHCP | STATIC <ip> <gateway> <subnet> [dns1] [dns2]]", "Shows the network settings, or switches to DHCP or a static address and saves. Send REBOOT to apply."},
   {"UPDATE_AUTO ON|OFF", "Turns the automatic daily update check (and the main page's banner) on or off and saves the setting."},
 };
 const byte commandTableSize = sizeof(commandTable) / sizeof(commandTable[0]);
@@ -216,6 +218,10 @@ void processCommand(String cmd) {
     cmd_update(args);
   } else if(command == "UPDATE_URL") {
     cmd_updateUrl(args);
+  } else if(command == "HOSTNAME") {
+    cmd_hostname(args);
+  } else if(command == "NET") {
+    cmd_net(args);
   } else if(command == "UPDATE_AUTO") {
     cmd_updateAuto(args);
   } else if(command == "DEBUG") {
@@ -319,6 +325,11 @@ void cmd_info() {
   } else {
     cmdOut->println(WiFi.localIP());
   }
+
+  cmdOut->print(F("Name: "));
+  cmdOut->print(hostname);
+  cmdOut->print(F(".local, "));
+  cmdOut->println(static_ip ? F("static IP") : F("DHCP"));
 
   cmdOut->print(F("Chip: "));
   cmdOut->print(ESP.getChipModel());
@@ -706,6 +717,80 @@ void cmd_updateUrl(String args) {
     save_config(LittleFS, "/config.ini");
   }
   cmdOut->println(update_url);
+  commandOK();
+}
+
+// HOSTNAME [name] - see apply_network_settings() in wifi.ino.
+void cmd_hostname(String args) {
+  args.trim();
+  if(args.length()) {
+    String err = apply_network_settings(args, static_ip, static_addr, static_gateway,
+                                        static_subnet, static_dns1, static_dns2);
+    if(err.length()) {
+      commandError(err);
+      return;
+    }
+    cmdOut->println(F("Saved - send REBOOT to apply."));
+  }
+  cmdOut->println(hostname);
+  commandOK();
+}
+
+// NET [DHCP | STATIC <ip> <gateway> <subnet> [dns1] [dns2]]
+void cmd_net(String args) {
+  args.trim();
+  String mode = args;
+  String rest = "";
+  int sp = args.indexOf(' ');
+  if(sp >= 0) {
+    mode = args.substring(0, sp);
+    rest = args.substring(sp + 1);
+    rest.trim();
+  }
+  mode.toUpperCase();
+
+  String err = "";
+  if(mode == "DHCP") {
+    err = apply_network_settings(hostname, false, static_addr, static_gateway,
+                                 static_subnet, static_dns1, static_dns2);
+  } else if(mode == "STATIC") {
+    String t[5];
+    int n = 0;
+    while(rest.length() && n < 5) {
+      int s = rest.indexOf(' ');
+      t[n++] = (s < 0) ? rest : rest.substring(0, s);
+      rest = (s < 0) ? String() : rest.substring(s + 1);
+      rest.trim();
+    }
+    if(n < 3) {
+      commandError(F("usage: NET STATIC <ip> <gateway> <subnet> [dns1] [dns2]"));
+      return;
+    }
+    err = apply_network_settings(hostname, true, t[0], t[1], t[2], t[3], t[4]);
+  } else if(mode.length()) {
+    commandError(F("usage: NET [DHCP | STATIC <ip> <gateway> <subnet> [dns1] [dns2]]"));
+    return;
+  }
+  if(err.length()) {
+    commandError(err);
+    return;
+  }
+  if(mode.length())
+    cmdOut->println(F("Saved - send REBOOT to apply."));
+
+  cmdOut->print(F("Name: "));
+  cmdOut->println(hostname);
+  cmdOut->print(F("Mode: "));
+  cmdOut->println(static_ip ? F("static") : F("DHCP"));
+  if(static_ip) {
+    cmdOut->println("Static: " + static_addr + " gw " + static_gateway + " mask " + static_subnet +
+                    " dns " + (static_dns1.length() ? static_dns1 : static_gateway) +
+                    (static_dns2.length() ? " " + static_dns2 : String()));
+  }
+  if(WiFi.status() == WL_CONNECTED && !hotspot_mode()) {
+    cmdOut->println("Now: " + WiFi.localIP().toString() + " gw " + WiFi.gatewayIP().toString() +
+                    " mask " + WiFi.subnetMask().toString() + " dns " + WiFi.dnsIP(0).toString());
+  }
   commandOK();
 }
 

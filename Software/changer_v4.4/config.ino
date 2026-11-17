@@ -20,6 +20,10 @@ void setup_config() {
   jquery = "/jquery-3.6.3.min.js";
 
   update_url = UPDATE_URL_DEFAULT;
+
+  hostname = PROJECT;
+  static_ip = false;
+  static_addr = static_gateway = static_subnet = static_dns1 = static_dns2 = "";
   update_auto = true;
 
   test_run = 10;
@@ -123,6 +127,21 @@ void assign_config(String name, String value) {
     update_url = value;
   } else if(name == "update_auto") {
     update_auto = value.toInt();
+  } else if(name == "hostname") {
+    if(valid_hostname(value))
+      hostname = value; // otherwise keep the default rather than an unusable name
+  } else if(name == "static_ip") {
+    static_ip = value.toInt();
+  } else if(name == "static_address") {
+    static_addr = value;
+  } else if(name == "static_gateway") {
+    static_gateway = value;
+  } else if(name == "static_subnet") {
+    static_subnet = value;
+  } else if(name == "static_dns1") {
+    static_dns1 = value;
+  } else if(name == "static_dns2") {
+    static_dns2 = value;
   }else if(name == "test_run") {
     test_run = value.toInt();
   } else if(name == "wifi_enabled") {
@@ -162,6 +181,13 @@ void save_config(fs::FS &fs, const char * path) {
   temp_message += "jquery="+jquery+"\n";
   temp_message += "update_url="+update_url+"\n";
   temp_message += "update_auto="+(String)update_auto+"\n";
+  temp_message += "hostname="+hostname+"\n";
+  temp_message += "static_ip="+(String)static_ip+"\n";
+  temp_message += "static_address="+static_addr+"\n";
+  temp_message += "static_gateway="+static_gateway+"\n";
+  temp_message += "static_subnet="+static_subnet+"\n";
+  temp_message += "static_dns1="+static_dns1+"\n";
+  temp_message += "static_dns2="+static_dns2+"\n";
   temp_message += "test_run="+(String)test_run+"\n";
   temp_message += "wifi_enabled="+(String)wifi_enabled+"\n";
   temp_message += "i2c_enabled="+(String)i2c_enabled+"\n";

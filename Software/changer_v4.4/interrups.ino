@@ -9,7 +9,11 @@
   if(DEBUG)
     Serial.println(F("Configuring Interrupts."));
 
-  pinMode(ARM, INPUT);
+  // Pull-up on: a hall effect sensor (A3144 and similar) has an open-collector output
+  // that only pulls low with a magnet present and floats otherwise - with plain INPUT
+  // the floating pin picked up noise and "passed" about once per debounce period. The
+  // IR sensor modules have their own pull-up, so this changes nothing for them.
+  pinMode(ARM, INPUT_PULLUP);
     
   //attachInterrupt(digitalPinToInterrupt(armPin), arm_sensor_handler, RISING);
   // Because the IR LED is on all the time, we get a bit more response if it's FALLING.

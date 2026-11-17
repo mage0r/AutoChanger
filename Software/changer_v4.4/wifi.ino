@@ -114,6 +114,7 @@ void setup_wifi()
       weblog.println(F("WiFi not connected yet - retrying."));
     }
     WiFi.mode(WIFI_STA);
+    apply_sta_ip_config();
     WiFi.begin(ssid, wifi_password);
     wifiBeginAt = millis();
     if(wifiBeginAt == 0)
@@ -130,7 +131,7 @@ void start_network_services() {
     return;
   started = true;
 
-  ArduinoOTA.setHostname(PROJECT);
+  ArduinoOTA.setHostname(hostname.c_str());
 
   // Same password as the web interface (http_password, from config.ini), so the
   // Arduino IDE asks for it before a network upload. /password updates it too.
@@ -165,8 +166,10 @@ void start_network_services() {
 
   ArduinoOTA.begin();
 
-  MDNS.begin(PROJECT);
-  weblog.println(F("Host: http://" PROJECT ".local/"));
+  MDNS.begin(hostname.c_str());
+  weblog.print(F("Host: http://"));
+  weblog.print(hostname);
+  weblog.println(F(".local/"));
 
   setupAsyncServer();
 }
@@ -223,7 +226,7 @@ void setup_AP() {
   WiFi.softAPConfig(IPAddress(4, 3, 2, 1), IPAddress(4, 3, 2, 1), IPAddress(255, 255, 255, 0));
 
   // Open network (no password) - it only ever serves the join page.
-  if (!WiFi.softAP(PROJECT)) {
+  if (!WiFi.softAP(hostname.c_str())) { // the unit name - "AutoChanger" unless changed
     // This used to hang here forever with a frozen screen - restart and try again.
     weblog.println(F("Soft AP creation failed - restarting."));
     delay(1000);
@@ -279,10 +282,114 @@ void hotspot_retry_loop() {
       weblog.print(F("Hotspot mode: retrying WiFi - "));
       weblog.println(ssid);
     }
+    apply_sta_ip_config();
     WiFi.begin(ssid, wifi_password);
     hotspotRetryAt = millis();
     hotspotAttempting = true;
   }
+}
+
+// ---------------------------------------------------------------- unit name / static IP
+
+// 1-32 letters, digits or hyphens, not starting or ending with a hyphen - a valid DNS
+// label, so it works as name.local, as a DHCP hostname and as an SSID.
+bool valid_hostname(const String &h) {
+  if(h.length() < 1 || h.length() > 32 || h[0] == '-' || h[h.length() - 1] == '-')
+    return false;
+  for(unsigned int i = 0; i < h.length(); i++) {
+    if(!isAlphaNumeric(h[i]) && h[i] != '-')
+      return false;
+  }
+  return true;
+}
+
+// A mask is valid if, as a 32-bit number, it's all ones followed by all zeros.
+bool valid_subnet_mask(const IPAddress &m) {
+  uint32_t v = ((uint32_t)m[0] << 24) | ((uint32_t)m[1] << 16) | ((uint32_t)m[2] << 8) | m[3];
+  if(v == 0)
+    return false;
+  uint32_t inv = ~v;
+  return (inv & (inv + 1)) == 0;
+}
+
+// Validates and saves the WiFi tab's Network Settings (also the serial HOSTNAME and
+// NET commands). Returns "" on success, else what's wrong - nothing is saved then.
+// The caller restarts the unit (web) or asks for REBOOT (serial) to apply it.
+String apply_network_settings(String name, bool useStatic, String ip, String gateway,
+                              String subnet, String dns1, String dns2) {
+  name.trim();
+  ip.trim();
+  gateway.trim();
+  subnet.trim();
+  dns1.trim();
+  dns2.trim();
+  if(!valid_hostname(name))
+    return "The unit name must be 1-32 letters, numbers or hyphens, not starting or ending with a hyphen.";
+
+  if(useStatic) {
+    IPAddress a, g, m, d;
+    if(!a.fromString(ip) || (uint32_t)a == 0)
+      return "Invalid IP address.";
+    if(!g.fromString(gateway) || (uint32_t)g == 0)
+      return "Invalid gateway.";
+    if(!m.fromString(subnet) || !valid_subnet_mask(m))
+      return "Invalid subnet mask (e.g. 255.255.255.0).";
+    if(((uint32_t)a & (uint32_t)m) != ((uint32_t)g & (uint32_t)m))
+      return "The IP address and gateway aren't on the same subnet.";
+    if(a == g)
+      return "The IP address can't be the same as the gateway.";
+    if(dns1.length() && !d.fromString(dns1))
+      return "Invalid DNS server.";
+    if(dns2.length() && !d.fromString(dns2))
+      return "Invalid second DNS server.";
+    static_addr = ip;
+    static_gateway = gateway;
+    static_subnet = subnet;
+    static_dns1 = dns1;
+    static_dns2 = dns2;
+  }
+  hostname = name;
+  static_ip = useStatic;
+  save_config(LittleFS, "/config.ini");
+  weblog.print(F("Network settings saved: "));
+  weblog.print(hostname);
+  weblog.println(static_ip ? (" - static " + static_addr) : String(" - DHCP"));
+  return "";
+}
+
+// Static address or DHCP for the station side - call before every WiFi.begin().
+void apply_sta_ip_config() {
+  IPAddress a, g, m, d1, d2;
+  if(static_ip && a.fromString(static_addr) && g.fromString(static_gateway) &&
+     m.fromString(static_subnet)) {
+    if(!d1.fromString(static_dns1))
+      d1 = g; // most home routers answer DNS themselves
+    if(!d2.fromString(static_dns2))
+      d2 = IPAddress(0, 0, 0, 0);
+    WiFi.config(a, g, m, d1, d2);
+  } else {
+    WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE); // DHCP
+  }
+}
+
+// For the WiFi tab's fields: 0 ip, 1 gateway, 2 subnet, 3 dns1, 4 dns2. The saved
+// static values if there are any, otherwise what DHCP gave us right now - so
+// switching to static starts from addresses that are known to work.
+String net_field(int which) {
+  const String *saved[] = {&static_addr, &static_gateway, &static_subnet, &static_dns1, &static_dns2};
+  if(which < 0 || which > 4)
+    return "";
+  if(static_ip || saved[0]->length() || WiFi.status() != WL_CONNECTED || hotspot_mode())
+    return Tar::htmlEscape(*saved[which]);
+  IPAddress v;
+  switch(which) {
+    case 0: v = WiFi.localIP(); break;
+    case 1: v = WiFi.gatewayIP(); break;
+    case 2: v = WiFi.subnetMask(); break;
+    case 3: v = WiFi.dnsIP(0); break;
+    default: v = WiFi.dnsIP(1); break;
+  }
+  return ((uint32_t)v == 0) ? String() : v.toString();
 }
 
 void ota_loop() {

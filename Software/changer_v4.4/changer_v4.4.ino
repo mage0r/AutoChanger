@@ -18,7 +18,7 @@
 
 // Set our version number.  Don't forget to update when featureset changes
 #define PROJECT "AutoChanger"
-#define VERSION "V.4.4.2"
+#define VERSION "V.4.4.3"
 
 #include <Wire.h>
 #include <Bounce2.h>
@@ -252,6 +252,9 @@ void setup() {
     update_boot(); // first boot after an online update: refresh the web pages - see updater.ino
     log_page_status();
   }
+
+  // The unit name for DHCP - must be set before the radio is first started (setup_wifi()).
+  WiFi.setHostname(hostname.c_str());
 
   // set up the Interrupts
   setup_interrupts();
