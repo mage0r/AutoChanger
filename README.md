@@ -8,7 +8,7 @@ How to use your AutoChanger
 
 Thanks for purchasing or building your own AutoChanger.  I've put together a page of all the different features for you to try.
 
-It is highly recommended you upgrade your AutoChanger firmware to the latest.  The current latest is v4.3.3
+It is highly recommended you upgrade your AutoChanger firmware to the latest.  The current latest is v4.4.3
 
 [How to Upgrade Your AutoChanger Firmware](https://github.com/mage0r/AutoChanger/wiki/How%E2%80%90to%E2%80%90upgrade)
 
@@ -25,9 +25,9 @@ You can read about the progress of this design at the following links:
 
 [Building a better colour changer - Part 2 - Firing the lasers](https://github.com/mage0r/AutoChanger/wiki/Building-a-better-Colour-Changer-%E2%80%93-Part-2-%E2%80%93-Firing-the-Lasers)
 
-[Building a Better Colour Changer – Interlude – The KRC-1000E](https://github.com/mage0r/AutoChanger/wiki/Building-a-Better-Colour-Changer-%E2%80%93-Interlude-%E2%80%93-The-KRC%E2%80%901000E)
+[Building a Better Colour Changer â€“ Interlude â€“ The KRC-1000E](https://github.com/mage0r/AutoChanger/wiki/Building-a-Better-Colour-Changer-%E2%80%93-Interlude-%E2%80%93-The-KRC%E2%80%901000E)
 
-[Building a Better Colour Changer – Part 3 – Revising the design](https://github.com/mage0r/AutoChanger/wiki/Building-a-Better-Colour-Changer-%E2%80%93-Part-3-%E2%80%93-Revising-the-design)
+[Building a Better Colour Changer â€“ Part 3 â€“ Revising the design](https://github.com/mage0r/AutoChanger/wiki/Building-a-Better-Colour-Changer-%E2%80%93-Part-3-%E2%80%93-Revising-the-design)
 
 For the sake of completeness, the early versions of this project are described at [Hardware Version 1.0 to 2.0]https://github.com/mage0r/AutoChanger/wiki/Hardware-Version-1.0-to-2.0)
 
